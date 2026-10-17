@@ -565,10 +565,11 @@ fn application_chrome(
                 ui.horizontal(|ui| {
                     ui.label(":");
                     ui.vertical(|ui| {
-                        let response = egui::TextEdit::singleline(&mut state.command)
+                        let mut text_edit = egui::TextEdit::singleline(&mut state.command)
                             .lock_focus(true)
-                            .show(ui)
-                            .response;
+                            .show(ui);
+                        let response = &text_edit.response;
+                        let mut completion_cursor = None;
                         let input = ui.input(|input| {
                             (
                                 input.key_pressed(egui::Key::ArrowDown),
@@ -616,6 +617,7 @@ fn application_chrome(
                                 &state.command,
                                 &candidates[state.completion_index],
                             );
+                            completion_cursor = Some(state.command.chars().count());
                         } else if input.2 {
                             submit_command(&mut state);
                         } else if input.3 {
@@ -632,6 +634,7 @@ fn application_chrome(
                                     if ui.add(button).clicked() {
                                         state.command =
                                             replace_completion(&state.command, candidate);
+                                        completion_cursor = Some(state.command.chars().count());
                                     }
                                 }
                             });
@@ -641,6 +644,12 @@ fn application_chrome(
                         }
                         if command_bar_tab_pressed {
                             response.request_focus();
+                        }
+                        if let Some(cursor) = completion_cursor {
+                            text_edit.state.cursor.set_char_range(Some(
+                                egui::text::CCursorRange::one(egui::text::CCursor::new(cursor)),
+                            ));
+                            text_edit.state.store(ui.ctx(), response.id);
                         }
                     });
                 });
