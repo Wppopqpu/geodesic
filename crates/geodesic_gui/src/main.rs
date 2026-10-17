@@ -7,13 +7,19 @@ use bevy::{
     window::PrimaryWindow,
 };
 use bevy_egui::{EguiContexts, EguiPlugin, egui};
-use geodesic_core::{Construction, GeoCommand, Label, ProjectivePoint};
+use geodesic_core::{Construction, GeoCommand, GeometricObject, Label, ProjectivePoint};
 use geodesic_io::Project;
 
 #[derive(Resource, Default)]
 struct GuiState {
     project: Project,
     command: String,
+    command_bar_visible: bool,
+    command_bar_focus_requested: bool,
+    command_history: Vec<String>,
+    history_cursor: Option<usize>,
+    completion_query: String,
+    completion_index: usize,
     message: String,
     theme: UiTheme,
     selected: Option<Label>,
@@ -277,6 +283,10 @@ fn select_and_drag(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The application chrome keeps related egui panels in one system."
+)]
 fn application_chrome(
     mut contexts: EguiContexts,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -284,6 +294,13 @@ fn application_chrome(
     mut state: ResMut<GuiState>,
 ) {
     let context = contexts.ctx_mut();
+    if !state.command_bar_visible
+        && !context.wants_keyboard_input()
+        && context.input(|input| input.key_pressed(egui::Key::Colon))
+    {
+        state.command_bar_visible = true;
+        state.command_bar_focus_requested = true;
+    }
     draw_axis_labels(context, &windows, &camera);
     egui::TopBottomPanel::top("toolbar").show(context, |ui| {
         ui.horizontal(|ui| {
@@ -364,19 +381,103 @@ fn application_chrome(
             ui.label("Select a real affine point to edit its direct style.");
         }
     });
+    if !state.command_bar_visible {
+        return;
+    }
+
     egui::TopBottomPanel::bottom("command_bar").show(context, |ui| {
+        let candidates = command_completions(&state.project.construction, &state.command);
+        if state.completion_query != state.command {
+            let command = state.command.clone();
+            state.completion_query.clone_from(&command);
+            state.completion_index = 0;
+        }
+        if !candidates.is_empty() {
+            state.completion_index %= candidates.len();
+        }
+
         ui.horizontal(|ui| {
             ui.label(":");
-            let response = ui.text_edit_singleline(&mut state.command);
-            if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                let command = std::mem::take(&mut state.command);
-                state.message = execute_command(&mut state.project.construction, &command)
-                    .unwrap_or_else(|error| format!("error: {error}"));
-            }
-            if !state.message.is_empty() {
-                ui.label(&state.message);
-            }
+            ui.vertical(|ui| {
+                let response = ui.text_edit_singleline(&mut state.command);
+                let input = ui.input(|input| {
+                    (
+                        input.key_pressed(egui::Key::Tab),
+                        input.key_pressed(egui::Key::ArrowDown),
+                        input.key_pressed(egui::Key::ArrowUp),
+                        input.key_pressed(egui::Key::Enter),
+                        input.key_pressed(egui::Key::Escape),
+                    )
+                });
+                if state.command_bar_focus_requested {
+                    response.request_focus();
+                    state.command_bar_focus_requested = false;
+                }
+                let focused = response.has_focus();
+                let mut accept_completion = false;
+
+                if focused && !candidates.is_empty() {
+                    if input.1 {
+                        state.completion_index = (state.completion_index + 1) % candidates.len();
+                    } else if input.2 {
+                        state.completion_index = state
+                            .completion_index
+                            .checked_sub(1)
+                            .unwrap_or(candidates.len() - 1);
+                    }
+                    accept_completion = input.0;
+                } else if focused && input.1 {
+                    let history = state.command_history.clone();
+                    let mut command = state.command.clone();
+                    let mut cursor = state.history_cursor;
+                    history_next(&mut command, &mut cursor, &history);
+                    state.command = command;
+                    state.history_cursor = cursor;
+                } else if focused && input.2 {
+                    let history = state.command_history.clone();
+                    let mut command = state.command.clone();
+                    let mut cursor = state.history_cursor;
+                    history_previous(&mut command, &mut cursor, &history);
+                    state.command = command;
+                    state.history_cursor = cursor;
+                }
+
+                if accept_completion {
+                    state.command =
+                        replace_completion(&state.command, &candidates[state.completion_index]);
+                } else if focused && input.3 {
+                    let command = std::mem::take(&mut state.command);
+                    if !command.trim().is_empty() {
+                        state.command_history.push(command.clone());
+                    }
+                    state.history_cursor = None;
+                    state.completion_query.clear();
+                    state.message = execute_command(&mut state.project.construction, &command)
+                        .unwrap_or_else(|error| format!("error: {error}"));
+                    state.command_bar_visible = false;
+                } else if focused && input.4 {
+                    state.command_bar_visible = false;
+                }
+
+                if !candidates.is_empty() {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(response.rect.width());
+                        for (index, candidate) in candidates.iter().enumerate() {
+                            if ui
+                                .selectable_label(index == state.completion_index, candidate)
+                                .clicked()
+                            {
+                                state.command = replace_completion(&state.command, candidate);
+                            }
+                        }
+                    });
+                }
+                if !state.message.is_empty() {
+                    ui.label(&state.message);
+                }
+            });
         });
+        ui.small(command_hint(&state.command));
     });
 }
 
@@ -540,9 +641,111 @@ fn execute_command(construction: &mut Construction, source: &str) -> Result<Stri
             .redo()
             .map(|()| "redid command".to_owned())
             .map_err(|error| error.to_string()),
-        _ => Err(
-            "expected :point label x y, :line label point_a point_b, :move label x y, :undo, or :redo".to_owned(),
-        ),
+        _ => Err(command_hint(source).to_owned()),
+    }
+}
+
+const COMMAND_NAMES: [&str; 5] = ["point", "line", "move", "undo", "redo"];
+
+fn command_completions(construction: &Construction, source: &str) -> Vec<String> {
+    let trimmed = source.trim_start();
+    let without_colon = trimmed.strip_prefix(':').unwrap_or(trimmed);
+    let fields: Vec<_> = without_colon.split_whitespace().collect();
+    let trailing_space = without_colon.ends_with(char::is_whitespace);
+    let position = if trailing_space {
+        fields.len()
+    } else {
+        fields.len().saturating_sub(1)
+    };
+    let partial = if trailing_space {
+        ""
+    } else {
+        fields.last().copied().unwrap_or_default()
+    };
+
+    if fields.is_empty() || position == 0 {
+        return COMMAND_NAMES
+            .into_iter()
+            .filter(|name| name.starts_with(partial))
+            .map(str::to_owned)
+            .collect();
+    }
+
+    let command = fields[0];
+    let labels = labels_for_position(construction, command, position);
+    labels
+        .into_iter()
+        .filter(|label| label.starts_with(partial))
+        .collect()
+}
+
+fn labels_for_position(construction: &Construction, command: &str, position: usize) -> Vec<String> {
+    let Ok(snapshot) = construction.evaluate() else {
+        return Vec::new();
+    };
+    snapshot
+        .iter()
+        .filter(|(_, object)| match command {
+            "point" | "line" if position == 1 => true,
+            "move" if position == 1 => matches!(object, GeometricObject::Point(_)),
+            "line" if position >= 2 => matches!(object, GeometricObject::Point(_)),
+            _ => false,
+        })
+        .map(|(label, _)| label.to_string())
+        .collect()
+}
+
+fn replace_completion(source: &str, completion: &str) -> String {
+    let token_start = source
+        .char_indices()
+        .rev()
+        .find(|(_, character)| character.is_whitespace())
+        .map_or_else(
+            || usize::from(source.starts_with(':')),
+            |(index, character)| index + character.len_utf8(),
+        );
+    format!("{}{}", &source[..token_start], completion)
+}
+
+fn command_hint(source: &str) -> &'static str {
+    let fields: Vec<_> = source
+        .trim()
+        .trim_start_matches(':')
+        .split_whitespace()
+        .collect();
+    match fields.first().copied() {
+        None => {
+            "commands: :point label x y | :line label point_a point_b | :move label x y | :undo | :redo"
+        }
+        Some("point") => "usage: :point label x y",
+        Some("line") => "usage: :line label point_a point_b",
+        Some("move") => "usage: :move label x y",
+        Some("undo") => "usage: :undo",
+        Some("redo") => "usage: :redo",
+        Some(_) => "unknown command; use :point, :line, :move, :undo, or :redo",
+    }
+}
+
+fn history_previous(command: &mut String, cursor: &mut Option<usize>, history: &[String]) {
+    if history.is_empty() {
+        return;
+    }
+    let index = cursor.map_or(history.len() - 1, |index| index.saturating_sub(1));
+    *cursor = Some(index);
+    command.clone_from(&history[index]);
+}
+
+fn history_next(command: &mut String, cursor: &mut Option<usize>, history: &[String]) {
+    let Some(index) = *cursor else {
+        return;
+    };
+    if index + 1 < history.len() {
+        let next = index + 1;
+        *cursor = Some(next);
+        command.clone_from(&history[next]);
+    } else {
+        *cursor = None;
+        command.clear();
     }
 }
 
@@ -558,7 +761,10 @@ fn parse_coordinate(source: &str) -> Result<f64, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{UiTheme, execute_command, hex_color, rgb};
+    use super::{
+        GuiState, UiTheme, command_completions, command_hint, execute_command, hex_color,
+        history_next, history_previous, replace_completion, rgb,
+    };
     use geodesic_core::Construction;
 
     #[test]
@@ -582,6 +788,85 @@ mod tests {
             3
         );
         execute_command(&mut construction, ":move point_a 2 3").expect("move");
+    }
+
+    #[test]
+    fn completes_command_names_from_the_current_token() {
+        let construction = Construction::new();
+        assert_eq!(command_completions(&construction, ":p"), vec!["point"]);
+        assert_eq!(command_completions(&construction, ":un"), vec!["undo"]);
+        assert_eq!(
+            command_completions(&construction, ":"),
+            vec!["point", "line", "move", "undo", "redo"]
+        );
+    }
+
+    #[test]
+    fn completes_labels_only_for_label_arguments() {
+        let mut construction = Construction::new();
+        execute_command(&mut construction, ":point point_a 0 0").expect("point a");
+        execute_command(&mut construction, ":point point_b 1 1").expect("point b");
+
+        assert_eq!(
+            command_completions(&construction, ":line diagonal point_"),
+            vec!["point_a", "point_b"]
+        );
+        assert!(command_completions(&construction, ":point point_ ").is_empty());
+        assert_eq!(
+            command_completions(&construction, ":move point_"),
+            vec!["point_a", "point_b"]
+        );
+    }
+
+    #[test]
+    fn completion_replaces_only_the_current_token() {
+        assert_eq!(
+            replace_completion(":line diagonal point_", "point_a"),
+            ":line diagonal point_a"
+        );
+        assert_eq!(replace_completion(":po", "point"), ":point");
+        assert_eq!(
+            replace_completion(":point point_a  ", "point_b"),
+            ":point point_a  point_b"
+        );
+    }
+
+    #[test]
+    fn command_hints_describe_the_expected_arguments() {
+        assert_eq!(
+            command_hint(":"),
+            "commands: :point label x y | :line label point_a point_b | :move label x y | :undo | :redo"
+        );
+        assert_eq!(
+            command_hint(":line diagonal"),
+            "usage: :line label point_a point_b"
+        );
+        assert_eq!(
+            command_hint(":unknown"),
+            "unknown command; use :point, :line, :move, :undo, or :redo"
+        );
+    }
+
+    #[test]
+    fn command_history_moves_older_and_newer_without_losing_entries() {
+        let history = vec![":point point_a 0 0".to_owned(), ":undo".to_owned()];
+        let mut command = String::new();
+        let mut cursor = None;
+        history_previous(&mut command, &mut cursor, &history);
+        assert_eq!(command, ":undo");
+        history_previous(&mut command, &mut cursor, &history);
+        assert_eq!(command, ":point point_a 0 0");
+        history_next(&mut command, &mut cursor, &history);
+        assert_eq!(command, ":undo");
+        history_next(&mut command, &mut cursor, &history);
+        assert!(command.is_empty());
+        assert_eq!(cursor, None);
+    }
+
+    #[test]
+    fn command_bar_is_hidden_by_default() {
+        assert!(!GuiState::default().command_bar_visible);
+        assert!(!GuiState::default().command_bar_focus_requested);
     }
 
     #[test]
