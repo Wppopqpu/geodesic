@@ -1,0 +1,224 @@
+#![forbid(unsafe_code)]
+use clap::{Parser, Subcommand};
+use std::{fs, process::ExitCode};
+#[derive(Parser)]
+#[command(name = "geodesic")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+#[derive(Subcommand)]
+enum Command {
+    /// Validates a native project document.
+    Validate { project: String },
+    /// Renders a native project document to deterministic SVG on stdout.
+    RenderSvg { project: String },
+    /// Imports a read-only `.ggb` archive and prints native project data.
+    Import { archive: String },
+    /// Evaluates a project and prints a stable object summary.
+    Eval {
+        project: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Applies one point-line construction command and prints the updated document.
+    Apply {
+        project: String,
+        #[arg(long)]
+        json: bool,
+        #[command(subcommand)]
+        operation: Operation,
+    },
+}
+
+#[derive(Subcommand)]
+enum Operation {
+    AddPoint {
+        label: String,
+        x: f64,
+        y: f64,
+    },
+    AddComplexPoint {
+        label: String,
+        x_re: f64,
+        x_im: f64,
+        y_re: f64,
+        y_im: f64,
+        z_re: f64,
+        z_im: f64,
+    },
+    AddLineThrough {
+        label: String,
+        first: String,
+        second: String,
+    },
+    MovePoint {
+        label: String,
+        x: f64,
+        y: f64,
+    },
+    AddIntersection {
+        label: String,
+        first: String,
+        second: String,
+    },
+    AddParallelThrough {
+        label: String,
+        point: String,
+        line: String,
+    },
+    AddPerpendicularThrough {
+        label: String,
+        point: String,
+        line: String,
+    },
+    Undo,
+    Redo,
+}
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    let result = match cli.command {
+        Command::Validate { project } => fs::read_to_string(project)
+            .map_err(|error| error.to_string())
+            .and_then(|source| {
+                geodesic_io::load(&source)
+                    .map(|_| "valid".to_owned())
+                    .map_err(|error| error.to_string())
+            }),
+        Command::RenderSvg { project } => fs::read_to_string(project)
+            .map_err(|error| error.to_string())
+            .and_then(|source| geodesic_io::load(&source).map_err(|error| error.to_string()))
+            .and_then(|project| geodesic_svg::render_project(&project).map_err(|error| error.to_string())),
+        Command::Import { archive } => fs::read(archive)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| geodesic_io::import_ggb(&bytes).map_err(|error| error.to_string()))
+            .map(|(project, report)| serde_json::json!({
+                "project": geodesic_io::save(&project),
+                "report": {"converted": report.converted, "ignored_ggb_script": report.ignored_ggb_script, "placeholders": report.placeholders.iter().map(|placeholder| serde_json::json!({"label": placeholder.label, "source_type": placeholder.source_type, "definition_summary": placeholder.definition_summary, "dependencies": placeholder.dependencies})).collect::<Vec<_>>()}
+            }).to_string()),
+        Command::Eval { project, json } => fs::read_to_string(project)
+            .map_err(|error| error.to_string())
+            .and_then(|source| geodesic_io::load(&source).map_err(|error| error.to_string()))
+            .and_then(|project| project.construction.evaluate().map_err(|error| error.to_string()))
+            .map(|snapshot| {
+                let labels: Vec<_> = snapshot.iter().map(|(label, _)| label.to_string()).collect();
+                if json { serde_json::json!({"objects": labels}).to_string() } else { labels.join("\n") }
+            }),
+        Command::Apply { project, json, operation } => fs::read_to_string(project)
+            .map_err(|error| error.to_string())
+            .and_then(|source| geodesic_io::load(&source).map_err(|error| error.to_string()))
+            .and_then(|mut project| {
+                apply_operation(&mut project, operation)?;
+                let source = geodesic_io::save(&project);
+                Ok(if json { serde_json::json!({"project": source}).to_string() } else { source })
+            }),
+    };
+    match result {
+        Ok(output) => {
+            println!("{output}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("geodesic: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> Result<(), String> {
+    match operation {
+        Operation::AddPoint { label, x, y } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddPoint {
+                label: parse_label(&label)?,
+                point: geodesic_core::ProjectivePoint::real_affine(x, y),
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::AddComplexPoint {
+            label,
+            x_re,
+            x_im,
+            y_re,
+            y_im,
+            z_re,
+            z_im,
+        } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddPoint {
+                label: parse_label(&label)?,
+                point: geodesic_core::ProjectivePoint::new(
+                    num_complex::Complex64::new(x_re, x_im),
+                    num_complex::Complex64::new(y_re, y_im),
+                    num_complex::Complex64::new(z_re, z_im),
+                )
+                .map_err(|error| error.to_string())?,
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::AddLineThrough {
+            label,
+            first,
+            second,
+        } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddLineThrough {
+                label: parse_label(&label)?,
+                first: parse_label(&first)?,
+                second: parse_label(&second)?,
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::MovePoint { label, x, y } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::MovePoint {
+                label: parse_label(&label)?,
+                point: geodesic_core::ProjectivePoint::real_affine(x, y),
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::AddIntersection {
+            label,
+            first,
+            second,
+        } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddIntersection {
+                label: parse_label(&label)?,
+                first: parse_label(&first)?,
+                second: parse_label(&second)?,
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::AddParallelThrough { label, point, line } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddParallelThrough {
+                label: parse_label(&label)?,
+                point: parse_label(&point)?,
+                line: parse_label(&line)?,
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::AddPerpendicularThrough { label, point, line } => geodesic_io::apply_command(
+            project,
+            geodesic_core::GeoCommand::AddPerpendicularThrough {
+                label: parse_label(&label)?,
+                point: parse_label(&point)?,
+                line: parse_label(&line)?,
+            },
+        )
+        .map_err(|error| error.to_string()),
+        Operation::Undo => project
+            .construction
+            .undo()
+            .map_err(|error| error.to_string()),
+        Operation::Redo => project
+            .construction
+            .redo()
+            .map_err(|error| error.to_string()),
+    }
+}
+
+fn parse_label(value: &str) -> Result<geodesic_core::Label, String> {
+    geodesic_core::Label::parse(value).map_err(|error| error.to_string())
+}

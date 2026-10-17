@@ -1,0 +1,13 @@
+[package]
+name = "geodesic_gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.16.1"
+bevy_egui = "0.34.1"
+geodesic_core = { path = "../geodesic_core" }
+geodesic_io = { path = "../geodesic_io" }
+
+[lints]
+workspace = true

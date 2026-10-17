@@ -1,6 +1,18 @@
-[package]
-name = "geodesic"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/geodesic_core",
+    "crates/geodesic_io",
+    "crates/geodesic_lisp",
+    "crates/geodesic_svg",
+    "crates/geodesic_cli",
+    "crates/geodesic_mcp",
+    "crates/geodesic_gui",
+]
+resolver = "3"
 
-[dependencies]
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

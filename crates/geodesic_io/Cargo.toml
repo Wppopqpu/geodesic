@@ -1,0 +1,15 @@
+[package]
+name = "geodesic_io"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+geodesic_core = { path = "../geodesic_core" }
+lexpr = "0.2.7"
+num-complex = "0.4.6"
+roxmltree = "0.20.0"
+thiserror = "2.0.17"
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

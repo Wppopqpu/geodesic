@@ -1,0 +1,16 @@
+[package]
+name = "geodesic_core"
+version = "0.1.0"
+edition = "2024"
+description = "Domain model and evaluation kernel for Geodesic"
+
+[dependencies]
+num-complex = "0.4.6"
+thiserror = "2.0.17"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

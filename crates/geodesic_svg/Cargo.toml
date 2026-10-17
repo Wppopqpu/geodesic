@@ -1,0 +1,14 @@
+[package]
+name = "geodesic_svg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+geodesic_core = { path = "../geodesic_core" }
+geodesic_io = { path = "../geodesic_io" }
+
+[dev-dependencies]
+num-complex = "0.4.6"
+
+[lints]
+workspace = true
