@@ -2,7 +2,9 @@ use std::{collections::BTreeSet, fmt::Write};
 
 use geodesic_core::{GeoCommand, Label, ObjectDefinition, ProjectiveLine, ProjectivePoint};
 
-use crate::{ObjectStyle, Project, ProjectError, SCHEMA_VERSION, Script};
+use crate::{
+    ObjectStyle, Project, ProjectError, SCHEMA_VERSION, Script, StyleBinding, StyleCategory,
+};
 
 /// Serializes a project into canonical deterministic S-expression text.
 #[must_use]
@@ -28,22 +30,18 @@ pub fn save(project: &Project) -> String {
         let event = script.event.replace('\\', "\\\\").replace('"', "\\\"");
         let _ = write!(output, " (script \"{event}\" \"{escaped}\")");
     }
-    for (label, style) in &project.object_styles {
-        let _ = write!(
-            output,
-            " (style {label} \"{}\" {} {})",
-            style.color, style.size, style.opacity
-        );
+    for (label, binding) in &project.object_styles {
+        write_style_binding(&mut output, "style", label, binding);
     }
-    for (label, style) in &project.style_presets {
-        let _ = write!(
-            output,
-            " (style_preset {label} \"{}\" {} {})",
-            style.color, style.size, style.opacity
-        );
+    for (label, binding) in &project.style_presets {
+        write_style_binding(&mut output, "style_preset", label, binding);
     }
-    for (label, preset) in &project.object_presets {
-        let _ = write!(output, " (style_use {label} {preset})");
+    for (category, preset) in &project.category_presets {
+        let category = match category {
+            StyleCategory::Point => "point",
+            StyleCategory::Line => "line",
+        };
+        let _ = write!(output, " (style_category {category} {preset})");
     }
     output.push(')');
     output
@@ -186,19 +184,42 @@ fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), Project
             source: string(&form[2])?.to_owned(),
         }),
         "style" if form.len() == 5 => {
-            project
-                .object_styles
-                .insert(parse_label(form, 1)?, parse_style(form)?);
+            project.object_styles.insert(
+                parse_label(form, 1)?,
+                StyleBinding::Concrete(parse_style(form)?),
+            );
         }
         "style_preset" if form.len() == 5 => {
-            project
-                .style_presets
-                .insert(parse_label(form, 1)?, parse_style(form)?);
+            project.style_presets.insert(
+                parse_label(form, 1)?,
+                StyleBinding::Concrete(parse_style(form)?),
+            );
         }
         "style_use" if form.len() == 3 => {
+            project.object_styles.insert(
+                parse_label(form, 1)?,
+                StyleBinding::Fallback(parse_label(form, 2)?),
+            );
+        }
+        "style_preset_use" if form.len() == 3 => {
+            project.style_presets.insert(
+                parse_label(form, 1)?,
+                StyleBinding::Fallback(parse_label(form, 2)?),
+            );
+        }
+        "style_category" if form.len() == 3 => {
+            let category = match symbol(&form[1])? {
+                "point" => StyleCategory::Point,
+                "line" => StyleCategory::Line,
+                other => {
+                    return Err(ProjectError::Invalid(format!(
+                        "unknown style category `{other}`"
+                    )));
+                }
+            };
             project
-                .object_presets
-                .insert(parse_label(form, 1)?, parse_label(form, 2)?);
+                .category_presets
+                .insert(category, parse_label(form, 2)?);
         }
         other => {
             return Err(ProjectError::Invalid(format!(
@@ -386,5 +407,26 @@ fn parse_style(form: &[lexpr::Value]) -> Result<ObjectStyle, ProjectError> {
         color,
         size,
         opacity,
+        ..ObjectStyle::default()
     })
+}
+
+fn write_style_binding(output: &mut String, form: &str, label: &Label, binding: &StyleBinding) {
+    match binding {
+        StyleBinding::Concrete(style) => {
+            let _ = write!(
+                output,
+                " ({form} {label} \"{}\" {} {})",
+                style.color, style.size, style.opacity
+            );
+        }
+        StyleBinding::Fallback(target) => {
+            let form = if form == "style" {
+                "style_use"
+            } else {
+                "style_preset_use"
+            };
+            let _ = write!(output, " ({form} {label} {target})");
+        }
+    }
 }

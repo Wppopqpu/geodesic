@@ -44,6 +44,7 @@ fn render_with_styles(snapshot: &GeometrySnapshot, project: Option<&Project>) ->
                     color: "#212121".to_owned(),
                     size: 0.05,
                     opacity: 1.0,
+                    ..ObjectStyle::default()
                 },
                 |project| geodesic_io::effective_style(project, label),
             );
@@ -76,6 +77,7 @@ fn style_for(project: Option<&Project>, label: &geodesic_core::Label) -> ObjectS
             color: "#212121".to_owned(),
             size: 0.05,
             opacity: 1.0,
+            ..ObjectStyle::default()
         },
         |project| geodesic_io::effective_style(project, label),
     )

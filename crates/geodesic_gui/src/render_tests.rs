@@ -43,11 +43,12 @@ fn capture_canvas_paths() {
             .expect("point");
         state.project.object_styles.insert(
             label,
-            geodesic_io::ObjectStyle {
+            geodesic_io::StyleBinding::Concrete(geodesic_io::ObjectStyle {
                 size,
                 color: color.to_owned(),
                 opacity,
-            },
+                ..geodesic_io::ObjectStyle::default()
+            }),
         );
     }
     for (name, coefficients, color, opacity, size) in [
@@ -96,11 +97,12 @@ fn capture_canvas_paths() {
             .expect("add line");
         state.project.object_styles.insert(
             label,
-            geodesic_io::ObjectStyle {
+            geodesic_io::StyleBinding::Concrete(geodesic_io::ObjectStyle {
                 size,
                 color: color.to_owned(),
                 opacity,
-            },
+                ..geodesic_io::ObjectStyle::default()
+            }),
         );
     }
     for (label, command, color) in [
@@ -139,11 +141,12 @@ fn capture_canvas_paths() {
             .expect("bounded object");
         state.project.object_styles.insert(
             Label::parse(label).expect("label"),
-            geodesic_io::ObjectStyle {
+            geodesic_io::StyleBinding::Concrete(geodesic_io::ObjectStyle {
                 color: color.to_owned(),
                 size: 0.18,
                 opacity: 1.0,
-            },
+                ..geodesic_io::ObjectStyle::default()
+            }),
         );
     }
     state.selected = Some(Label::parse("selected").expect("label"));

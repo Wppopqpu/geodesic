@@ -582,7 +582,7 @@ pub(crate) fn point_radius_pixels(
     project: &geodesic_io::Project,
     label: &geodesic_core::Label,
 ) -> f32 {
-    if project.object_styles.contains_key(label) || project.object_presets.contains_key(label) {
+    if project.object_styles.contains_key(label) {
         return style_size_pixels(geodesic_io::effective_style(project, label).size);
     }
     project

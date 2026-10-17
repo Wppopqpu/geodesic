@@ -12,7 +12,8 @@ mod tests;
 pub use format::{load, save};
 pub use ggb::import_ggb;
 pub use model::{
-    CompatibilityPlaceholder, CompatibilityReport, ObjectStyle, Project, ProjectError, Script,
+    CompatibilityPlaceholder, CompatibilityReport, LinePattern, ObjectStyle, PointShape, Project,
+    ProjectError, Script, StyleBinding, StyleCategory,
 };
 pub use style::{apply_command, effective_style};
 

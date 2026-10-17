@@ -138,7 +138,7 @@ fn imports_bounded_constructions_from_geogebra_commands() {
 fn persists_validated_direct_and_named_styles() {
     let project = load("(geodesic 1 (point point_a 0 0) (style point_a \"#ff0000\" 0.3 0.5) (style_preset emphasis \"#00ff00\" 0.2 1))").expect("project");
     assert_eq!(
-        project.object_styles[&Label::parse("point_a").expect("label")].color,
+        effective_style(&project, &Label::parse("point_a").expect("label")).color,
         "#ff0000"
     );
     assert_eq!(load(&save(&project)).expect("round trip"), project);
@@ -151,5 +151,16 @@ fn resolves_presets_and_prefers_direct_overrides() {
         effective_style(&project, &Label::parse("point_a").expect("label")).color,
         "#ff0000"
     );
+    assert_eq!(load(&save(&project)).expect("round trip"), project);
+}
+
+#[test]
+fn resolves_complete_fallbacks_from_the_category_default() {
+    let project = load("(geodesic 1 (point point_a 0 0) (style_preset warm \"#ff0000\" 0.3 0.5) (style_preset_use emphasis warm) (style_category point emphasis))").expect("project");
+    let label = Label::parse("point_a").expect("label");
+    let style = effective_style(&project, &label);
+    assert_eq!(style.color, "#ff0000");
+    assert_eq!(style.size, 0.3);
+    assert_eq!(style.opacity, 0.5);
     assert_eq!(load(&save(&project)).expect("round trip"), project);
 }

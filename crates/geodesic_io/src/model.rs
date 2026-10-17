@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use geodesic_core::{Construction, Label};
+use geodesic_core::{Construction, Label, ObjectDefinition};
 
 /// A complete persisted project document.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -9,12 +9,53 @@ pub struct Project {
     pub construction: Construction,
     /// Explicit application-owned script sections. They are data until dispatched.
     pub scripts: Vec<Script>,
-    /// Direct visual overrides indexed by geometric-object label.
-    pub object_styles: BTreeMap<Label, ObjectStyle>,
-    /// Named reusable point/line appearance definitions.
-    pub style_presets: BTreeMap<Label, ObjectStyle>,
-    /// Optional named style preset used by each geometric object.
-    pub object_presets: BTreeMap<Label, Label>,
+    /// Complete concrete styles or named fallback references indexed by object label.
+    pub object_styles: BTreeMap<Label, StyleBinding>,
+    /// Named complete styles or fallback references.
+    pub style_presets: BTreeMap<Label, StyleBinding>,
+    /// The named default style for each visual category.
+    pub category_presets: BTreeMap<StyleCategory, Label>,
+}
+
+/// Visual categories with independently configurable named defaults.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StyleCategory {
+    /// Points, intersections, and constrained points.
+    Point,
+    /// Lines and bounded straight loci.
+    Line,
+}
+
+impl StyleCategory {
+    /// Classifies an object definition for default-style lookup.
+    #[must_use]
+    pub const fn for_definition(definition: &ObjectDefinition) -> Self {
+        match definition {
+            ObjectDefinition::FreePoint(_)
+            | ObjectDefinition::Intersection { .. }
+            | ObjectDefinition::Midpoint { .. }
+            | ObjectDefinition::PointOnLocus { .. } => Self::Point,
+            ObjectDefinition::FreeLine(_)
+            | ObjectDefinition::LineThrough { .. }
+            | ObjectDefinition::ParallelThrough { .. }
+            | ObjectDefinition::PerpendicularThrough { .. }
+            | ObjectDefinition::Segment { .. }
+            | ObjectDefinition::Ray { .. }
+            | ObjectDefinition::Vector { .. }
+            | ObjectDefinition::PerpendicularBisector { .. }
+            | ObjectDefinition::AngleBisector { .. }
+            | ObjectDefinition::LineAngleBisector { .. } => Self::Line,
+        }
+    }
+}
+
+/// A style is exactly a concrete complete value or a named fallback reference.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StyleBinding {
+    /// Every visual property is explicitly stored on this style.
+    Concrete(ObjectStyle),
+    /// Resolve all properties through a named style.
+    Fallback(Label),
 }
 
 /// Persisted visual properties shared by point and line renderers.
@@ -30,6 +71,29 @@ pub struct ObjectStyle {
     pub size: f64,
     /// Opacity in the closed range zero through one.
     pub opacity: f64,
+    /// Point marker shape.
+    pub point_shape: PointShape,
+    /// Stroke pattern for straight loci.
+    pub line_pattern: LinePattern,
+}
+
+/// Supported point marker shapes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PointShape {
+    #[default]
+    Circle,
+    Square,
+    Diamond,
+    Triangle,
+}
+
+/// Supported straight-locus stroke patterns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LinePattern {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
 }
 
 impl Default for ObjectStyle {
@@ -38,6 +102,8 @@ impl Default for ObjectStyle {
             color: "#1565c0".to_owned(),
             size: 0.15,
             opacity: 1.0,
+            point_shape: PointShape::Circle,
+            line_pattern: LinePattern::Solid,
         }
     }
 }

@@ -542,28 +542,34 @@ pub(crate) fn application_chrome(
                             && let Ok(preset) = Label::parse("emphasis")
                         {
                             state.project.style_presets.entry(preset).or_insert(
-                                geodesic_io::ObjectStyle {
+                                geodesic_io::StyleBinding::Concrete(geodesic_io::ObjectStyle {
                                     color: "#d32f2f".to_owned(),
                                     size: 0.25,
                                     opacity: 1.0,
-                                },
+                                    ..geodesic_io::ObjectStyle::default()
+                                }),
                             );
                             state.sync_lisp_draft();
                         }
                         for preset in presets {
                             if ui.button(format!("Use preset {preset}")).clicked() {
-                                state.project.object_presets.insert(label.clone(), preset);
-                                state.project.object_styles.remove(&label);
+                                state.project.object_styles.insert(
+                                    label.clone(),
+                                    geodesic_io::StyleBinding::Fallback(preset),
+                                );
                                 state.sync_lisp_draft();
                             }
                         }
-                        if state.project.object_presets.contains_key(&label) {
-                            let preset = &state.project.object_presets[&label];
+                        if let Some(geodesic_io::StyleBinding::Fallback(preset)) =
+                            state.project.object_styles.get(&label)
+                        {
                             ui.label(format!("Using preset {preset}"));
                             if ui.button("Use direct override").clicked() {
                                 let style = geodesic_io::effective_style(&state.project, &label);
-                                state.project.object_presets.remove(&label);
-                                state.project.object_styles.insert(label.clone(), style);
+                                state.project.object_styles.insert(
+                                    label.clone(),
+                                    geodesic_io::StyleBinding::Concrete(style),
+                                );
                                 state.sync_lisp_draft();
                             }
                         } else {
@@ -614,7 +620,10 @@ pub(crate) fn application_chrome(
                                 )
                                 .changed();
                             if changed {
-                                state.project.object_styles.insert(label, style);
+                                state
+                                    .project
+                                    .object_styles
+                                    .insert(label, geodesic_io::StyleBinding::Concrete(style));
                                 state.sync_lisp_draft();
                             }
                         }
