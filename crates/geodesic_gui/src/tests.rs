@@ -190,8 +190,23 @@ mod tests {
         let zoomed_out = crate::point_radius_world(style_size, 0.01);
         let zoomed_in = crate::point_radius_world(style_size, 0.04);
 
-        assert!((zoomed_out / 0.01 - 7.5).abs() < 1e-5);
-        assert!((zoomed_in / 0.04 - 7.5).abs() < 1e-5);
+        assert!((zoomed_out / 0.01 - 5.0).abs() < 1e-5);
+        assert!((zoomed_in / 0.04 - 5.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn point_sizes_match_geogebra_defaults_and_editor_range() {
+        for (actual, expected) in [
+            (crate::default_point_radius_pixels(true), 5.0),
+            (crate::default_point_radius_pixels(false), 4.0),
+            (crate::style_size_pixels(0.03), 1.0),
+            (crate::style_size_pixels(0.15), 5.0),
+            (crate::style_size_pixels(0.27), 9.0),
+            (crate::style_size_pixels(0.01), 1.0),
+            (crate::style_size_pixels(1.0), 9.0),
+        ] {
+            assert!((actual - expected).abs() < 1e-5);
+        }
     }
 
     #[test]

@@ -5,6 +5,7 @@ mod app;
 mod canvas;
 mod chrome;
 mod command;
+mod path_renderer;
 mod presentation;
 mod state;
 
@@ -13,9 +14,13 @@ mod state;
 mod gui_tests;
 
 #[cfg(test)]
+mod render_tests;
+
+#[cfg(test)]
 pub(crate) use canvas::{
-    canvas_contains, clipped_line, grid_step, line_is_hit, next_zoom_scale, point_is_hit,
-    point_radius_world, point_selection_radius_world,
+    canvas_contains, clipped_line, default_point_radius_pixels, grid_step, line_is_hit,
+    next_zoom_scale, point_is_hit, point_radius_world, point_selection_radius_world,
+    style_size_pixels,
 };
 #[cfg(test)]
 pub(crate) use command::{

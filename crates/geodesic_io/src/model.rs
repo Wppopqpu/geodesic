@@ -22,7 +22,11 @@ pub struct Project {
 pub struct ObjectStyle {
     /// CSS-compatible RGB hex color.
     pub color: String,
-    /// Point radius or line width in SVG units.
+    /// Point radius or line width in persisted render units.
+    ///
+    /// The canvas maps `0.03` units to one logical pixel of point radius or
+    /// half a logical pixel of line width, independent of camera zoom;
+    /// SVG output uses the value directly in its view-box coordinate system.
     pub size: f64,
     /// Opacity in the closed range zero through one.
     pub opacity: f64,

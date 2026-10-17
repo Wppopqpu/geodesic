@@ -16,7 +16,7 @@ pub(crate) fn run() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (draw_canvas, application_chrome, canvas_input).chain(),
+            (application_chrome, canvas_input, draw_canvas).chain(),
         )
         .run();
 }
@@ -26,5 +26,9 @@ fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
     state.style_width = SIDE_PANEL_WIDTH;
     let mut projection = OrthographicProjection::default_2d();
     projection.scale = 0.02;
-    commands.spawn((Camera2d, Projection::Orthographic(projection)));
+    commands.spawn((
+        Camera2d,
+        Msaa::Sample4,
+        Projection::Orthographic(projection),
+    ));
 }

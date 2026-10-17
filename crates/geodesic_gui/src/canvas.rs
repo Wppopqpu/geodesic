@@ -9,15 +9,20 @@ use geodesic_core::{
     parallel_through,
 };
 
+use crate::path_renderer::{CanvasBatch, CanvasMesh, PathPainter};
 use crate::presentation::bevy_color;
 use crate::state::{DragPreview, DragTarget, GuiState, TOOLBAR_HEIGHT};
 
-/// The initial camera scale makes one style unit equal to 50 screen pixels.
+/// The initial camera scale maps 0.15 persisted style units to five pixels.
 ///
 /// Point styles remain persisted in project/SVG units, while the canvas adapts
 /// their world-space radius to keep their on-screen radius constant as the
 /// camera zooms.
-const STYLE_UNITS_PER_PIXEL_AT_DEFAULT_SCALE: f32 = 0.02;
+const STYLE_UNITS_PER_PIXEL: f32 = 0.03;
+const DEFAULT_FREE_POINT_RADIUS_PIXELS: f32 = 5.0;
+const DEFAULT_DEPENDENT_POINT_RADIUS_PIXELS: f32 = 4.0;
+const MIN_POINT_RADIUS_PIXELS: f32 = 1.0;
+const MAX_POINT_RADIUS_PIXELS: f32 = 9.0;
 const POINT_SELECTION_RADIUS_PIXELS: f32 = 15.0;
 const LINE_SELECTION_RADIUS_PIXELS: f32 = 3.0;
 
@@ -117,10 +122,10 @@ fn select_canvas_object(
         .find_map(|(label, object)| match object {
             GeometricObject::Point(point) => match point.renderability() {
                 geodesic_core::Renderability::Renderable(point)
-                    if point_is_hit(
+                    if point_is_hit_radius(
                         Vec2::new(point.x as f32, point.y as f32),
                         world,
-                        geodesic_io::effective_style(project, label).size,
+                        point_radius_pixels(project, label),
                         camera_scale,
                     ) =>
                 {
@@ -213,43 +218,101 @@ fn drag_target(
     clippy::cast_possible_truncation,
     reason = "Bevy's 2D renderer uses f32 coordinates."
 )]
+#[cfg(test)]
 pub(crate) fn point_radius_world(style_size: f64, camera_scale: f32) -> f32 {
-    style_size as f32 * camera_scale / STYLE_UNITS_PER_PIXEL_AT_DEFAULT_SCALE
+    style_size_pixels(style_size) * camera_scale
 }
 
+#[cfg(test)]
 pub(crate) fn point_selection_radius_world(style_size: f64, camera_scale: f32) -> f32 {
-    point_radius_world(style_size, camera_scale).max(POINT_SELECTION_RADIUS_PIXELS * camera_scale)
+    point_selection_radius_pixels(style_size_pixels(style_size)) * camera_scale
 }
 
+#[cfg(test)]
 pub(crate) fn point_is_hit(point: Vec2, cursor: Vec2, style_size: f64, camera_scale: f32) -> bool {
-    point.distance(cursor) <= point_selection_radius_world(style_size, camera_scale)
+    point_is_hit_radius(point, cursor, style_size_pixels(style_size), camera_scale)
+}
+
+fn point_is_hit_radius(point: Vec2, cursor: Vec2, radius_pixels: f32, camera_scale: f32) -> bool {
+    point.distance(cursor) <= point_selection_radius_pixels(radius_pixels) * camera_scale
+}
+
+fn point_selection_radius_pixels(radius_pixels: f32) -> f32 {
+    radius_pixels.max(POINT_SELECTION_RADIUS_PIXELS)
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Canvas rendering uses f32 screen-pixel dimensions."
+)]
+pub(crate) fn style_size_pixels(style_size: f64) -> f32 {
+    (style_size as f32 / STYLE_UNITS_PER_PIXEL)
+        .clamp(MIN_POINT_RADIUS_PIXELS, MAX_POINT_RADIUS_PIXELS)
+}
+
+fn line_width_pixels(style_size: f64) -> f32 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Canvas rendering uses f32 screen-pixel dimensions."
+    )]
+    let pixels = style_size as f32 / STYLE_UNITS_PER_PIXEL;
+    // GeoGebra thickness units are twice the actual screen stroke width.
+    pixels.max(0.0) / 2.0
+}
+
+pub(crate) fn point_radius_pixels(
+    project: &geodesic_io::Project,
+    label: &geodesic_core::Label,
+) -> f32 {
+    if project.object_styles.contains_key(label) || project.object_presets.contains_key(label) {
+        return style_size_pixels(geodesic_io::effective_style(project, label).size);
+    }
+    project
+        .construction
+        .definitions()
+        .find_map(|(candidate, definition)| (candidate == label).then_some(definition))
+        .map_or(
+            DEFAULT_FREE_POINT_RADIUS_PIXELS,
+            |definition| match definition {
+                ObjectDefinition::FreePoint(_) => default_point_radius_pixels(true),
+                ObjectDefinition::FreeLine(_)
+                | ObjectDefinition::LineThrough { .. }
+                | ObjectDefinition::Intersection { .. }
+                | ObjectDefinition::ParallelThrough { .. }
+                | ObjectDefinition::PerpendicularThrough { .. } => {
+                    default_point_radius_pixels(false)
+                }
+            },
+        )
+}
+
+pub(crate) fn default_point_radius_pixels(is_free: bool) -> f32 {
+    if is_free {
+        DEFAULT_FREE_POINT_RADIUS_PIXELS
+    } else {
+        DEFAULT_DEPENDENT_POINT_RADIUS_PIXELS
+    }
 }
 
 pub(crate) fn line_is_hit(line: ProjectiveLine, cursor: Vec2, camera_scale: f32) -> bool {
-    let [a, b, c] = line.coefficients();
-    if a.im.abs() >= geodesic_core::STANDARD_PRECISION
-        || b.im.abs() >= geodesic_core::STANDARD_PRECISION
-        || c.im.abs() >= geodesic_core::STANDARD_PRECISION
-    {
+    let geodesic_core::Renderability::Renderable(line) = line.renderability() else {
         return false;
-    }
-    let normal_length = a.re.hypot(b.re);
-    normal_length >= geodesic_core::STANDARD_PRECISION
-        && (a.re * f64::from(cursor.x) + b.re * f64::from(cursor.y) + c.re).abs() / normal_length
-            <= f64::from(LINE_SELECTION_RADIUS_PIXELS * camera_scale)
+    };
+    (line.a * f64::from(cursor.x) + line.b * f64::from(cursor.y) + line.c).abs()
+        <= f64::from(LINE_SELECTION_RADIUS_PIXELS * camera_scale)
 }
 
 #[allow(
     clippy::cast_possible_truncation,
     reason = "Bevy's color alpha channel uses f32."
 )]
-fn canvas_color(style: &geodesic_io::ObjectStyle, selected: bool) -> Color {
-    let color = if selected {
-        Color::srgb(0.9, 0.2, 0.15)
-    } else {
-        bevy_color(&style.color)
-    };
-    color.with_alpha(style.opacity.clamp(0.0, 1.0) as f32)
+fn canvas_color(style: &geodesic_io::ObjectStyle) -> Color {
+    bevy_color(&style.color).with_alpha(style.opacity.clamp(0.0, 1.0) as f32)
+}
+
+fn selected_canvas_color(style: &geodesic_io::ObjectStyle) -> Color {
+    let color = canvas_color(style);
+    color.with_alpha(color.alpha() * 0.2)
 }
 
 pub(crate) fn canvas_contains(cursor: Vec2, window: &Window, state: &GuiState) -> bool {
@@ -285,102 +348,230 @@ pub(crate) fn next_zoom_scale(current: f32, factor: f32) -> Option<f32> {
 
 #[allow(
     clippy::needless_pass_by_value,
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Bevy system parameters are owned wrappers and its 2D renderer uses f32."
+    reason = "Bevy system parameters are owned wrappers."
 )]
 pub(crate) fn draw_canvas(
-    mut gizmos: Gizmos,
+    mut commands: Commands,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Transform, &Projection), With<Camera2d>>,
     state: Res<GuiState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut batch: Local<CanvasBatch>,
 ) {
-    let Some((left, right, bottom, top, scale)) = visible_world_bounds(&windows, &camera) else {
+    let Ok(window) = windows.single() else {
         return;
     };
+    let Ok((transform, Projection::Orthographic(projection))) = camera.single() else {
+        return;
+    };
+    batch.painter.clear();
+    batch.painter.set_pixel_scale(window.scale_factor());
+    paint_scene(
+        &mut batch.painter,
+        &state,
+        window.size(),
+        transform.translation.truncate(),
+        projection.scale,
+    );
+    let error = batch.painter.error().map(str::to_owned);
+    if error != batch.last_error {
+        if let Some(error) = &error {
+            warn!("{error}");
+        }
+        batch.last_error = error;
+    }
+    let mesh = batch.painter.mesh();
+    let mesh_transform = Transform::from_xyz(transform.translation.x, transform.translation.y, 0.0)
+        .with_scale(Vec3::new(projection.scale, projection.scale, 1.0));
+    if let Some(handle) = &batch.mesh {
+        if let Some(asset) = meshes.get_mut(handle) {
+            *asset = mesh;
+        }
+        if let Some(entity) = batch.entity {
+            commands.entity(entity).insert(mesh_transform);
+        }
+    } else {
+        let handle = meshes.add(mesh);
+        let material = materials.add(ColorMaterial {
+            color: Color::WHITE,
+            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            ..default()
+        });
+        batch.entity = Some(
+            commands
+                .spawn((
+                    CanvasMesh,
+                    Mesh2d(handle.clone()),
+                    MeshMaterial2d(material),
+                    mesh_transform,
+                ))
+                .id(),
+        );
+        batch.mesh = Some(handle);
+    }
+}
 
-    let step = grid_step(scale);
-    let first_x = (left / step).floor() * step;
-    let first_y = (bottom / step).floor() * step;
-    let x_count = (((right - first_x) / step).ceil().max(0.0) as usize) + 1;
-    let y_count = (((top - first_y) / step).ceil().max(0.0) as usize) + 1;
-    for index in 0..x_count {
-        let value = first_x + index as f32 * step;
-        let grid = Color::srgb(0.88, 0.88, 0.9);
-        gizmos.line_2d(Vec2::new(value, bottom), Vec2::new(value, top), grid);
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Finite viewport-local pixel coordinates are converted to Bevy f32 meshes."
+)]
+fn paint_scene(painter: &mut PathPainter, state: &GuiState, size: Vec2, origin: Vec2, scale: f32) {
+    if !scale.is_finite() || scale <= 0.0 || !origin.is_finite() || !size.is_finite() {
+        return;
     }
-    for index in 0..y_count {
-        let value = first_y + index as f32 * step;
-        let grid = Color::srgb(0.88, 0.88, 0.9);
-        gizmos.line_2d(Vec2::new(left, value), Vec2::new(right, value), grid);
-    }
-    let axis = Color::srgb(0.35, 0.35, 0.4);
-    gizmos.line_2d(Vec2::new(left, 0.0), Vec2::new(right, 0.0), axis);
-    gizmos.line_2d(Vec2::new(0.0, bottom), Vec2::new(0.0, top), axis);
-    if let Ok(snapshot) = state.project.construction.evaluate() {
-        for (label, object) in snapshot.iter() {
-            if let geodesic_core::GeometricObject::Point(point) = object
-                && let geodesic_core::Renderability::Renderable(point) = point.renderability()
-            {
-                let point = state
-                    .preview
-                    .as_ref()
-                    .and_then(|preview| match preview {
-                        DragPreview::Point {
-                            label: preview_label,
-                            point,
-                        } if preview_label == label => match point.renderability() {
-                            geodesic_core::Renderability::Renderable(point) => Some(point),
-                            _ => None,
-                        },
-                        DragPreview::Point { .. } | DragPreview::Line { .. } => None,
-                    })
-                    .unwrap_or(point);
-                let style = geodesic_io::effective_style(&state.project, label);
-                let color = canvas_color(&style, state.selected.as_ref() == Some(label));
-                gizmos.circle_2d(
-                    Vec2::new(point.x as f32, point.y as f32),
-                    point_radius_world(style.size, scale),
-                    color,
-                );
-            }
-            if let geodesic_core::GeometricObject::Line(line) = object {
-                let line = state
-                    .preview
-                    .as_ref()
-                    .and_then(|preview| match preview {
-                        DragPreview::Line {
-                            label: preview_label,
-                            line,
-                        } if preview_label == label => Some(*line),
-                        DragPreview::Point { .. } | DragPreview::Line { .. } => None,
-                    })
-                    .unwrap_or(*line);
-                let [a, b, c] = line.coefficients();
-                if a.im.abs() < geodesic_core::STANDARD_PRECISION
-                    && b.im.abs() < geodesic_core::STANDARD_PRECISION
-                    && c.im.abs() < geodesic_core::STANDARD_PRECISION
-                    && let Some((start, end)) = clipped_line(
-                        a.re as f32,
-                        b.re as f32,
-                        c.re as f32,
-                        left,
-                        right,
-                        bottom,
-                        top,
-                    )
-                {
-                    let style = geodesic_io::effective_style(&state.project, label);
-                    gizmos.line_2d(
-                        start,
-                        end,
-                        canvas_color(&style, state.selected.as_ref() == Some(label)),
-                    );
-                }
-            }
+    let half = size / 2.0;
+    let step = f64::from(grid_step(scale));
+    let spacing = step / f64::from(scale);
+    for (vertical, extent, center) in [(true, half.x, origin.x), (false, half.y, origin.y)] {
+        let start =
+            ((f64::from(center) - f64::from(extent) * f64::from(scale)) / step).ceil() * step;
+        let start = (start - f64::from(center)) / f64::from(scale);
+        let count = (f64::from(extent) * 2.0 / spacing).ceil() as usize + 1;
+        for index in 0..count {
+            let coordinate = (start + index as f64 * spacing) as f32;
+            let (a, b) = if vertical {
+                (
+                    Vec2::new(coordinate, -half.y),
+                    Vec2::new(coordinate, half.y),
+                )
+            } else {
+                (
+                    Vec2::new(-half.x, coordinate),
+                    Vec2::new(half.x, coordinate),
+                )
+            };
+            painter.line(a, b, 1.0, Color::srgb(0.88, 0.88, 0.9));
         }
     }
+    let axis = Color::srgb(0.35, 0.35, 0.4);
+    let zero = -origin / scale;
+    if zero.y.abs() <= half.y {
+        painter.line(
+            Vec2::new(-half.x, zero.y),
+            Vec2::new(half.x, zero.y),
+            1.0,
+            axis,
+        );
+    }
+    if zero.x.abs() <= half.x {
+        painter.line(
+            Vec2::new(zero.x, -half.y),
+            Vec2::new(zero.x, half.y),
+            1.0,
+            axis,
+        );
+    }
+    let Ok(snapshot) = state.project.construction.evaluate() else {
+        return;
+    };
+    // Painter order is explicit: grid, axes, lines, then point markers.
+    for (label, object) in snapshot.iter() {
+        if let GeometricObject::Line(line) = object {
+            let line = match &state.preview {
+                Some(DragPreview::Line {
+                    label: preview_label,
+                    line,
+                }) if preview_label == label => *line,
+                _ => *line,
+            };
+            paint_line(painter, state, label, line, half, origin, scale);
+        }
+    }
+    for (label, object) in snapshot.iter() {
+        if let GeometricObject::Point(point) = object {
+            let point = match &state.preview {
+                Some(DragPreview::Point {
+                    label: preview_label,
+                    point,
+                }) if preview_label == label => *point,
+                _ => *point,
+            };
+            paint_point(painter, state, label, point, half, origin, scale);
+        }
+    }
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Convert only viewport-local positions to mesh precision."
+)]
+fn paint_point(
+    painter: &mut PathPainter,
+    state: &GuiState,
+    label: &geodesic_core::Label,
+    point: ProjectivePoint,
+    half: Vec2,
+    origin: Vec2,
+    scale: f32,
+) {
+    let geodesic_core::Renderability::Renderable(point) = point.renderability() else {
+        return;
+    };
+    let center = Vec2::new(
+        ((point.x - f64::from(origin.x)) / f64::from(scale)) as f32,
+        ((point.y - f64::from(origin.y)) / f64::from(scale)) as f32,
+    );
+    let radius = point_radius_pixels(&state.project, label);
+    let highlight = radius.mul_add(2.0, 1.0);
+    if !center.is_finite() || (center.abs() - half).max_element() > highlight + 1.0 {
+        return;
+    }
+    let style = geodesic_io::effective_style(&state.project, label);
+    let color = canvas_color(&style);
+    if state.selected.as_ref() == Some(label) {
+        painter.disk(center, highlight, selected_canvas_color(&style));
+        painter.circle(center, highlight, 2.0, color);
+    }
+    painter.disk(center, radius, color);
+    painter.circle(center, radius, 1.0, Color::BLACK.with_alpha(color.alpha()));
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Transform in f64 before producing viewport-local f32 coefficients."
+)]
+fn paint_line(
+    painter: &mut PathPainter,
+    state: &GuiState,
+    label: &geodesic_core::Label,
+    line: ProjectiveLine,
+    half: Vec2,
+    origin: Vec2,
+    scale: f32,
+) {
+    let geodesic_core::Renderability::Renderable(line) = line.renderability() else {
+        return;
+    };
+    let constant =
+        (line.a * f64::from(origin.x) + line.b * f64::from(origin.y) + line.c) / f64::from(scale);
+    if !constant.is_finite() || constant.abs() > f64::from(half.length()) {
+        return;
+    }
+    let Some((start, end)) = clipped_line(
+        line.a as f32,
+        line.b as f32,
+        constant as f32,
+        -half.x,
+        half.x,
+        -half.y,
+        half.y,
+    ) else {
+        return;
+    };
+    let style = geodesic_io::effective_style(&state.project, label);
+    let width = line_width_pixels(style.size);
+    if state.selected.as_ref() == Some(label) {
+        painter.line(
+            start,
+            end,
+            2.0 * width.max(1.0) + 2.0,
+            selected_canvas_color(&style),
+        );
+    }
+    painter.line(start, end, width, canvas_color(&style));
 }
 
 pub(crate) fn visible_world_bounds(

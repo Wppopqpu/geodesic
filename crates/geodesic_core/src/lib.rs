@@ -17,8 +17,9 @@ pub use construction::{
 pub use error::{CommandError, EvaluationError, HistoryError, LabelError, ProjectiveError};
 pub use label::Label;
 pub use projective::{
-    ComplexCoordinate, ProjectiveLine, ProjectivePoint, RealAffinePoint, Renderability,
-    STANDARD_PRECISION, STANDARD_PRECISION_F32, parallel_through, perpendicular_through,
+    ComplexCoordinate, ProjectiveLine, ProjectivePoint, RealAffineLine, RealAffinePoint,
+    Renderability, STANDARD_PRECISION, STANDARD_PRECISION_F32, parallel_through,
+    perpendicular_through,
 };
 
 /// Version of the domain kernel.

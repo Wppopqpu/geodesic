@@ -14,6 +14,9 @@ pub enum LabelError {
 /// Failure while creating or evaluating a projective value.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
 pub enum ProjectiveError {
+    /// Homogeneous components must be finite.
+    #[error("homogeneous coordinates must be finite")]
+    NonFiniteCoordinates,
     /// Homogeneous coordinates must contain a non-zero component.
     #[error("homogeneous coordinates must not all be zero")]
     ZeroCoordinates,

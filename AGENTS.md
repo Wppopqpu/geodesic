@@ -101,6 +101,11 @@ and broad Classic 6 tool parity are explicitly later milestones.
   `STANDARD_PRECISION = 1e-8` and `MIN_PRECISION = 1e-5`.
 - Keep comparison and degeneracy policy centralized. Never scatter ad-hoc
   epsilon tests through algorithms or rendering code.
+- Real-affine extraction must be invariant under nonzero complex homogeneous
+  scaling. Normalize before testing reality; preserve the original complex data.
+  `NumericallyUncertain` means the display classification is near a tolerance
+  boundary or an ill-conditioned affine division, not a proof of non-reality.
+  Keep such objects in the algebra surface and omit them from canvas paths.
 - Represent 2D projective points with homogeneous complex coordinates and
   projective lines with homogeneous complex coefficients.
 - Render only the real affine chart in the initial canvas. Do not claim that a

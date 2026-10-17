@@ -35,27 +35,23 @@ fn render_with_styles(snapshot: &GeometrySnapshot, project: Option<&Project>) ->
                 point.x, -point.y, style.size, style.color, style.opacity
             );
         }
-        if let GeometricObject::Line(line) = object {
-            let [a, b, c] = line.coefficients();
-            if a.im.abs() < STANDARD_PRECISION
-                && b.im.abs() < STANDARD_PRECISION
-                && c.im.abs() < STANDARD_PRECISION
-                && let Some(((x1, y1), (x2, y2))) = clipped_line(a.re, b.re, c.re)
-            {
-                let style = project.map_or(
-                    ObjectStyle {
-                        color: "#212121".to_owned(),
-                        size: 0.05,
-                        opacity: 1.0,
-                    },
-                    |project| geodesic_io::effective_style(project, label),
-                );
-                let _ = write!(
-                    svg,
-                    "<line id=\"{label}\" x1=\"{x1}\" y1=\"{}\" x2=\"{x2}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"/>",
-                    -y1, -y2, style.color, style.size, style.opacity
-                );
-            }
+        if let GeometricObject::Line(line) = object
+            && let Renderability::Renderable(line) = line.renderability()
+            && let Some(((x1, y1), (x2, y2))) = clipped_line(line.a, line.b, line.c)
+        {
+            let style = project.map_or(
+                ObjectStyle {
+                    color: "#212121".to_owned(),
+                    size: 0.05,
+                    opacity: 1.0,
+                },
+                |project| geodesic_io::effective_style(project, label),
+            );
+            let _ = write!(
+                svg,
+                "<line id=\"{label}\" x1=\"{x1}\" y1=\"{}\" x2=\"{x2}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"/>",
+                -y1, -y2, style.color, style.size, style.opacity
+            );
         }
     }
     svg.push_str("</svg>");
@@ -122,6 +118,43 @@ mod tests {
         assert!(svg.contains("id=\"point_a\""));
         assert!(svg.contains("id=\"axis\""));
         assert!(!svg.contains("complex_point"));
+    }
+
+    #[test]
+    fn line_visibility_uses_normalized_core_classification() {
+        use geodesic_core::ComplexCoordinate as C;
+        let mut construction = Construction::new();
+        for (name, values) in [
+            (
+                "phase_real",
+                [C::new(0.0, 1e-200), C::new(0.0, 2e-200), C::new(0.0, 0.0)],
+            ),
+            ("complex_line", [1.0.into(), C::new(0.0, 1.0), 0.0.into()]),
+            (
+                "uncertain_line",
+                [1.0.into(), C::new(0.5, 1e-7), 0.0.into()],
+            ),
+            ("infinite_line", [0.0.into(), 0.0.into(), 1.0.into()]),
+        ] {
+            let [a, b, c] = values;
+            construction
+                .apply(GeoCommand::AddLine {
+                    label: Label::parse(name).expect("label"),
+                    line: ProjectiveLine::new(a, b, c).expect("line"),
+                })
+                .expect("command");
+        }
+        let snapshot = construction.evaluate().expect("snapshot");
+        assert_eq!(
+            snapshot.iter().count(),
+            4,
+            "hidden objects remain in the model"
+        );
+        let svg = render(&snapshot);
+        assert!(svg.contains("id=\"phase_real\""));
+        for hidden in ["complex_line", "uncertain_line", "infinite_line"] {
+            assert!(!svg.contains(hidden));
+        }
     }
 
     #[test]
