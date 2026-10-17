@@ -149,11 +149,13 @@ pub(crate) struct ToolbarIcons {
     pub(crate) intersection: Handle<Image>,
     pub(crate) parallel: Handle<Image>,
     pub(crate) perpendicular: Handle<Image>,
+    pub(crate) point_on_locus: Handle<Image>,
 }
 
 #[derive(Clone)]
 pub(crate) enum DragTarget {
     Point(Label),
+    ConstrainedPoint { label: Label, locus: Label },
     Line { label: Label, line: ProjectiveLine },
 }
 
@@ -162,6 +164,10 @@ pub(crate) enum DragPreview {
     Point {
         label: Label,
         point: ProjectivePoint,
+    },
+    ConstrainedPoint {
+        label: Label,
+        parameter: f64,
     },
     Line {
         label: Label,
@@ -177,6 +183,8 @@ pub(crate) enum ActiveTool {
     Move,
     /// Create a free point at the cursor.
     Point,
+    /// Create a movable point constrained to a line, segment, or ray.
+    PointOnLocus,
     /// Create an infinite line through two points.
     Line,
     /// Create an intersection of two supported loci.
@@ -201,9 +209,10 @@ pub(crate) enum ActiveTool {
 
 impl ActiveTool {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Move,
         Self::Point,
+        Self::PointOnLocus,
         Self::Line,
         Self::Intersection,
         Self::Segment,
@@ -220,6 +229,7 @@ impl ActiveTool {
         match self {
             Self::Move => "Move",
             Self::Point => "Point",
+            Self::PointOnLocus => "Point on object",
             Self::Line => "Line",
             Self::Intersection => "Intersect",
             Self::Segment => "Segment",
@@ -236,6 +246,7 @@ impl ActiveTool {
     pub(crate) const fn input_count(self) -> usize {
         match self {
             Self::Move | Self::Point => 0,
+            Self::PointOnLocus => 1,
             Self::Line
             | Self::Intersection
             | Self::Segment
@@ -252,6 +263,7 @@ impl ActiveTool {
     pub(crate) const fn label_prefix(self) -> &'static str {
         match self {
             Self::Move | Self::Point => "point",
+            Self::PointOnLocus => "point_on_locus",
             Self::Line => "line",
             Self::Intersection => "intersection",
             Self::Segment => "segment",

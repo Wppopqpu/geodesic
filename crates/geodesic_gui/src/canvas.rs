@@ -118,7 +118,7 @@ pub(crate) fn canvas_input(
     }
     if mouse_buttons.pressed(MouseButton::Left) {
         if let Some(target) = &state.dragging {
-            state.preview = drag_preview(target, world);
+            state.preview = drag_preview(&state.project.construction, target, world);
         } else if let Some(previous) = state.pan_cursor {
             let delta = cursor - previous;
             transform.translation.x -= delta.x * orthographic.scale;
@@ -164,7 +164,10 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
     }
     let expects_supporting_locus = matches!(
         state.active_tool,
-        ActiveTool::Intersection | ActiveTool::Parallel | ActiveTool::Perpendicular
+        ActiveTool::Intersection
+            | ActiveTool::PointOnLocus
+            | ActiveTool::Parallel
+            | ActiveTool::Perpendicular
     ) && (state.active_tool == ActiveTool::Intersection
         || !state.tool_inputs.is_empty());
     let input = if expects_supporting_locus {
@@ -206,6 +209,12 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
             label: label.clone(),
             first: inputs[0].clone(),
             second: inputs[1].clone(),
+        },
+        ActiveTool::PointOnLocus => GeoCommand::AddPointOnLocus {
+            label: label.clone(),
+            locus: inputs[0].clone(),
+            parameter: locus_parameter(&state.project.construction, &inputs[0], world)
+                .unwrap_or(0.0),
         },
         ActiveTool::Segment => GeoCommand::AddSegment {
             label: label.clone(),
@@ -274,6 +283,42 @@ fn select_canvas_supporting_locus(
         Some(GeometricObject::Line(_) | GeometricObject::Segment(_) | GeometricObject::Ray(_))
     )
     .then_some(label)
+}
+
+fn locus_parameter(
+    construction: &geodesic_core::Construction,
+    label: &geodesic_core::Label,
+    world: Vec2,
+) -> Option<f64> {
+    match construction.evaluate().ok()?.object(label)? {
+        GeometricObject::Line(line) => {
+            let geodesic_core::Renderability::Renderable(line) = line.renderability() else {
+                return None;
+            };
+            Some(
+                -line.b * (f64::from(world.x) + line.a * line.c)
+                    + line.a * (f64::from(world.y) + line.b * line.c),
+            )
+        }
+        GeometricObject::Segment(segment) => {
+            Some(affine_locus_parameter(segment.start, segment.end, world).clamp(0.0, 1.0))
+        }
+        GeometricObject::Ray(ray) => {
+            Some(affine_locus_parameter(ray.origin, ray.through, world).max(0.0))
+        }
+        GeometricObject::Point(_) | GeometricObject::Vector(_) => None,
+    }
+}
+
+fn affine_locus_parameter(
+    start: geodesic_core::RealAffinePoint,
+    end: geodesic_core::RealAffinePoint,
+    world: Vec2,
+) -> f64 {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    ((f64::from(world.x) - start.x) * dx + (f64::from(world.y) - start.y) * dy)
+        / (dx * dx + dy * dy)
 }
 
 fn next_tool_label(
@@ -378,12 +423,33 @@ fn select_canvas_point(
     })
 }
 
-fn drag_preview(target: &DragTarget, world: Vec2) -> Option<DragPreview> {
+fn drag_preview(
+    construction: &geodesic_core::Construction,
+    target: &DragTarget,
+    world: Vec2,
+) -> Option<DragPreview> {
     match target {
         DragTarget::Point(label) => Some(DragPreview::Point {
             label: label.clone(),
             point: ProjectivePoint::real_affine(f64::from(world.x), f64::from(world.y)),
         }),
+        DragTarget::ConstrainedPoint { label, locus } => {
+            let parameter = locus_parameter(construction, locus, world)?;
+            let mut preview = construction.clone();
+            preview
+                .apply(GeoCommand::MovePointOnLocus {
+                    label: label.clone(),
+                    parameter,
+                })
+                .ok()?;
+            let GeometricObject::Point(_) = preview.evaluate().ok()?.object(label)? else {
+                return None;
+            };
+            Some(DragPreview::ConstrainedPoint {
+                label: label.clone(),
+                parameter,
+            })
+        }
         DragTarget::Line { label, line } => parallel_through(
             ProjectivePoint::real_affine(f64::from(world.x), f64::from(world.y)),
             *line,
@@ -420,6 +486,14 @@ fn apply_drag(
             },
             "moved selected line",
         ),
+        DragTarget::ConstrainedPoint { label, locus } => (
+            GeoCommand::MovePointOnLocus {
+                label,
+                parameter: locus_parameter(construction, &locus, world)
+                    .ok_or_else(|| "constrained locus is unavailable".to_owned())?,
+            },
+            "moved constrained point",
+        ),
     };
     construction
         .apply(command)
@@ -436,6 +510,10 @@ fn drag_target(
         .find_map(|(candidate, definition)| (candidate == label).then_some(definition))
         .and_then(|definition| match definition {
             ObjectDefinition::FreePoint(_) => Some(DragTarget::Point(label.clone())),
+            ObjectDefinition::PointOnLocus { locus, .. } => Some(DragTarget::ConstrainedPoint {
+                label: label.clone(),
+                locus: locus.clone(),
+            }),
             ObjectDefinition::FreeLine(line) => Some(DragTarget::Line {
                 label: label.clone(),
                 line: *line,
@@ -450,8 +528,7 @@ fn drag_target(
             | ObjectDefinition::Midpoint { .. }
             | ObjectDefinition::PerpendicularBisector { .. }
             | ObjectDefinition::AngleBisector { .. }
-            | ObjectDefinition::LineAngleBisector { .. }
-            | ObjectDefinition::PointOnLocus { .. } => None,
+            | ObjectDefinition::LineAngleBisector { .. } => None,
         })
 }
 
@@ -788,6 +865,14 @@ pub(crate) fn preview_snapshot(state: &GuiState) -> Option<geodesic_core::Geomet
             .apply(GeoCommand::MoveLine {
                 label: label.clone(),
                 line: *line,
+            })
+            .ok()?,
+        Some(DragPreview::ConstrainedPoint {
+            label, parameter, ..
+        }) => construction
+            .apply(GeoCommand::MovePointOnLocus {
+                label: label.clone(),
+                parameter: *parameter,
             })
             .ok()?,
         None => {}

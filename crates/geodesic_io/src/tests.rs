@@ -74,6 +74,15 @@ fn round_trips_both_line_angle_bisector_outputs_once() {
 }
 
 #[test]
+fn round_trips_points_constrained_to_loci() {
+    let source = "(geodesic 1 (point a 0 0) (point b 2 0) (segment segment a b) (point_on_locus constrained segment 0.25))";
+    let project = load(source).expect("project");
+    let saved = save(&project);
+    assert!(saved.contains("point_on_locus constrained segment 0.25"));
+    assert_eq!(load(&saved).expect("round trip"), project);
+}
+
+#[test]
 fn imports_supported_objects_and_reports_unsupported_ones() {
     let xml = r#"<geogebra><construction><element type="point" label="point_a"><coords x="1" y="2" z="1"/></element><element type="circle" label="circle_a" definition="Circle"/><script/></construction></geogebra>"#;
     let mut bytes = Cursor::new(Vec::new());

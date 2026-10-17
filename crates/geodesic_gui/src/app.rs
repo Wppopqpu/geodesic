@@ -63,5 +63,6 @@ fn setup_ui_resources(
         intersection: asset_server.load("geogebra-toolbar/mode_intersect.png"),
         parallel: asset_server.load("geogebra-toolbar/mode_parallelline.png"),
         perpendicular: asset_server.load("geogebra-toolbar/mode_perpendicularline.png"),
+        point_on_locus: asset_server.load("geogebra-toolbar/mode_pointonobject.png"),
     });
 }

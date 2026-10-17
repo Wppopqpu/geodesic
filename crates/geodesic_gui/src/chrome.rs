@@ -26,6 +26,7 @@ const TOOL_STACKS: [&[ActiveTool]; 4] = [
     &[ActiveTool::Move],
     &[
         ActiveTool::Point,
+        ActiveTool::PointOnLocus,
         ActiveTool::Intersection,
         ActiveTool::Midpoint,
     ],
@@ -66,6 +67,7 @@ struct ToolbarIconIds {
     intersection: egui::TextureId,
     parallel: egui::TextureId,
     perpendicular: egui::TextureId,
+    point_on_locus: egui::TextureId,
 }
 
 impl ToolbarIconIds {
@@ -83,6 +85,7 @@ impl ToolbarIconIds {
             intersection: add_toolbar_image(contexts, &icons.intersection),
             parallel: add_toolbar_image(contexts, &icons.parallel),
             perpendicular: add_toolbar_image(contexts, &icons.perpendicular),
+            point_on_locus: add_toolbar_image(contexts, &icons.point_on_locus),
         }
     }
 
@@ -90,6 +93,7 @@ impl ToolbarIconIds {
         match tool {
             ActiveTool::Move => self.move_tool,
             ActiveTool::Point => self.point,
+            ActiveTool::PointOnLocus => self.point_on_locus,
             ActiveTool::Line => self.line,
             ActiveTool::Intersection => self.intersection,
             ActiveTool::Segment => self.segment,

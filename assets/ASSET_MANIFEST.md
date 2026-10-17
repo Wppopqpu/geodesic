@@ -28,3 +28,4 @@ are used only by Geodesic's non-commercial desktop toolbar.
 | `geogebra-toolbar/mode_intersect.png` | `mode_intersect.png` | `0dd817ed4b1d995ac60d833a97de774beede0e2ebbb928d9b98d7a901e0aadd1` | Intersection tool |
 | `geogebra-toolbar/mode_parallelline.png` | `mode_parallelline.png` | `b7db5feb0e0576c9a8854793b58c87267917b29f51b04396ba3c1702034639ff` | Parallel tool |
 | `geogebra-toolbar/mode_perpendicularline.png` | `mode_perpendicularline.png` | `7531bacd6d3d95c8ef72017dfe9582e7a25dc1b26f06ba513feeb8b7e7323912` | Perpendicular tool |
+| `geogebra-toolbar/mode_pointonobject.png` | `mode_pointonobject.png` | `531b260b675aa081f6fc88a5239e26ed2f2b91c458739693f552a26ca77f5dd5` | Point-on-locus tool |
