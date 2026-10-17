@@ -3,7 +3,8 @@ use std::{collections::BTreeSet, fmt::Write};
 use geodesic_core::{GeoCommand, Label, ObjectDefinition, ProjectiveLine, ProjectivePoint};
 
 use crate::{
-    ObjectStyle, Project, ProjectError, SCHEMA_VERSION, Script, StyleBinding, StyleCategory,
+    LinePattern, ObjectStyle, PointShape, Project, ProjectError, SCHEMA_VERSION, Script,
+    StyleBinding, StyleCategory,
 };
 
 /// Serializes a project into canonical deterministic S-expression text.
@@ -183,13 +184,13 @@ fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), Project
             event: string(&form[1])?.to_owned(),
             source: string(&form[2])?.to_owned(),
         }),
-        "style" if form.len() == 5 => {
+        "style" if matches!(form.len(), 5 | 7) => {
             project.object_styles.insert(
                 parse_label(form, 1)?,
                 StyleBinding::Concrete(parse_style(form)?),
             );
         }
-        "style_preset" if form.len() == 5 => {
+        "style_preset" if matches!(form.len(), 5 | 7) => {
             project.style_presets.insert(
                 parse_label(form, 1)?,
                 StyleBinding::Concrete(parse_style(form)?),
@@ -403,21 +404,56 @@ fn parse_style(form: &[lexpr::Value]) -> Result<ObjectStyle, ProjectError> {
             "style size must be positive and opacity must be within 0..=1".to_owned(),
         ));
     }
-    Ok(ObjectStyle {
+    let mut style = ObjectStyle {
         color,
         size,
         opacity,
         ..ObjectStyle::default()
-    })
+    };
+    if form.len() == 7 {
+        style.point_shape = match symbol(&form[5])? {
+            "circle" => PointShape::Circle,
+            "square" => PointShape::Square,
+            "diamond" => PointShape::Diamond,
+            "triangle" => PointShape::Triangle,
+            other => {
+                return Err(ProjectError::Invalid(format!(
+                    "unknown point shape `{other}`"
+                )));
+            }
+        };
+        style.line_pattern = match symbol(&form[6])? {
+            "solid" => LinePattern::Solid,
+            "dashed" => LinePattern::Dashed,
+            "dotted" => LinePattern::Dotted,
+            other => {
+                return Err(ProjectError::Invalid(format!(
+                    "unknown line pattern `{other}`"
+                )));
+            }
+        };
+    }
+    Ok(style)
 }
 
 fn write_style_binding(output: &mut String, form: &str, label: &Label, binding: &StyleBinding) {
     match binding {
         StyleBinding::Concrete(style) => {
+            let point_shape = match style.point_shape {
+                PointShape::Circle => "circle",
+                PointShape::Square => "square",
+                PointShape::Diamond => "diamond",
+                PointShape::Triangle => "triangle",
+            };
+            let line_pattern = match style.line_pattern {
+                LinePattern::Solid => "solid",
+                LinePattern::Dashed => "dashed",
+                LinePattern::Dotted => "dotted",
+            };
             let _ = write!(
                 output,
-                " ({form} {label} \"{}\" {} {})",
-                style.color, style.size, style.opacity
+                " ({form} {label} \"{}\" {} {} {point_shape} {line_pattern})",
+                style.color, style.size, style.opacity,
             );
         }
         StyleBinding::Fallback(target) => {

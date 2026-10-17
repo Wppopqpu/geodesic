@@ -8,6 +8,7 @@ use geodesic_core::{
     GeoCommand, GeometricObject, ObjectDefinition, ProjectiveLine, ProjectivePoint,
     parallel_through,
 };
+use geodesic_io::{LinePattern, PointShape};
 
 use crate::path_renderer::{CanvasBatch, CanvasMesh, PathPainter};
 use crate::presentation::bevy_color;
@@ -912,7 +913,45 @@ fn paint_bounded_line(
             selected_canvas_color(&style),
         );
     }
-    painter.line(start, end, width, canvas_color(&style));
+    paint_styled_line(
+        painter,
+        start,
+        end,
+        width,
+        canvas_color(&style),
+        style.line_pattern,
+    );
+}
+
+fn paint_styled_line(
+    painter: &mut PathPainter,
+    start: Vec2,
+    end: Vec2,
+    width: f32,
+    color: Color,
+    pattern: LinePattern,
+) {
+    let direction = end - start;
+    let length = direction.length();
+    let (stroke, gap) = match pattern {
+        LinePattern::Solid => {
+            painter.line(start, end, width, color);
+            return;
+        }
+        LinePattern::Dashed => (8.0, 5.0),
+        LinePattern::Dotted => (1.0, 4.0),
+    };
+    let unit = direction / length.max(f32::MIN_POSITIVE);
+    let mut offset = 0.0;
+    while offset < length {
+        painter.line(
+            start + unit * offset,
+            start + unit * (offset + stroke).min(length),
+            width,
+            color,
+        );
+        offset += stroke + gap;
+    }
 }
 
 fn paint_ray(
@@ -1027,8 +1066,36 @@ fn paint_point(
         painter.disk(center, highlight, selected_canvas_color(&style));
         painter.circle(center, highlight, 2.0, color);
     }
-    painter.disk(center, radius, color);
-    painter.circle(center, radius, 1.0, Color::BLACK.with_alpha(color.alpha()));
+    match style.point_shape {
+        PointShape::Circle => {
+            painter.disk(center, radius, color);
+            painter.circle(center, radius, 1.0, Color::BLACK.with_alpha(color.alpha()));
+        }
+        PointShape::Square => painter.polygon(
+            &[
+                center + Vec2::new(-radius, -radius),
+                center + Vec2::new(radius, -radius),
+                center + Vec2::new(radius, radius),
+                center + Vec2::new(-radius, radius),
+            ],
+            color,
+        ),
+        PointShape::Diamond => painter.polygon(
+            &[
+                center + Vec2::new(0.0, -radius),
+                center + Vec2::new(radius, 0.0),
+                center + Vec2::new(0.0, radius),
+                center + Vec2::new(-radius, 0.0),
+            ],
+            color,
+        ),
+        PointShape::Triangle => painter.triangle(
+            center + Vec2::new(0.0, -radius),
+            center + Vec2::new(radius, radius),
+            center + Vec2::new(-radius, radius),
+            color,
+        ),
+    }
 }
 
 #[allow(
@@ -1073,7 +1140,14 @@ fn paint_line(
             selected_canvas_color(&style),
         );
     }
-    painter.line(start, end, width, canvas_color(&style));
+    paint_styled_line(
+        painter,
+        start,
+        end,
+        width,
+        canvas_color(&style),
+        style.line_pattern,
+    );
 }
 
 pub(crate) fn visible_world_bounds(

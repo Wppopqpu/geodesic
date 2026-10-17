@@ -164,3 +164,14 @@ fn resolves_complete_fallbacks_from_the_category_default() {
     assert_eq!(style.opacity, 0.5);
     assert_eq!(load(&save(&project)).expect("round trip"), project);
 }
+
+#[test]
+fn persists_complete_point_and_line_appearance() {
+    let project =
+        load("(geodesic 1 (point point_a 0 0) (style point_a \"#ff0000\" 0.3 0.5 diamond dashed))")
+            .expect("project");
+    let style = effective_style(&project, &Label::parse("point_a").expect("label"));
+    assert_eq!(style.point_shape, crate::PointShape::Diamond);
+    assert_eq!(style.line_pattern, crate::LinePattern::Dashed);
+    assert_eq!(load(&save(&project)).expect("round trip"), project);
+}

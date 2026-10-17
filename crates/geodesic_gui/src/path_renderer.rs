@@ -109,6 +109,19 @@ impl PathPainter {
         self.fill_path(&builder.build(), color);
     }
 
+    pub(crate) fn polygon(&mut self, vertices: &[Vec2], color: Color) {
+        let Some((&first, rest)) = vertices.split_first() else {
+            return;
+        };
+        let mut builder = Path::builder();
+        builder.begin(point(first.x, first.y));
+        for vertex in rest {
+            builder.line_to(point(vertex.x, vertex.y));
+        }
+        builder.close();
+        self.fill_path(&builder.build(), color);
+    }
+
     pub(crate) fn mesh(&self) -> Mesh {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,

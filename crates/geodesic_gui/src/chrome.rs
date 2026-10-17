@@ -619,6 +619,56 @@ pub(crate) fn application_chrome(
                                         .text("Opacity"),
                                 )
                                 .changed();
+                            if is_point {
+                                let previous = style.point_shape;
+                                egui::ComboBox::from_label("Point shape")
+                                    .selected_text(format!("{:?}", style.point_shape))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut style.point_shape,
+                                            geodesic_io::PointShape::Circle,
+                                            "Circle",
+                                        );
+                                        ui.selectable_value(
+                                            &mut style.point_shape,
+                                            geodesic_io::PointShape::Square,
+                                            "Square",
+                                        );
+                                        ui.selectable_value(
+                                            &mut style.point_shape,
+                                            geodesic_io::PointShape::Diamond,
+                                            "Diamond",
+                                        );
+                                        ui.selectable_value(
+                                            &mut style.point_shape,
+                                            geodesic_io::PointShape::Triangle,
+                                            "Triangle",
+                                        );
+                                    });
+                                changed |= style.point_shape != previous;
+                            } else {
+                                let previous = style.line_pattern;
+                                egui::ComboBox::from_label("Line pattern")
+                                    .selected_text(format!("{:?}", style.line_pattern))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut style.line_pattern,
+                                            geodesic_io::LinePattern::Solid,
+                                            "Solid",
+                                        );
+                                        ui.selectable_value(
+                                            &mut style.line_pattern,
+                                            geodesic_io::LinePattern::Dashed,
+                                            "Dashed",
+                                        );
+                                        ui.selectable_value(
+                                            &mut style.line_pattern,
+                                            geodesic_io::LinePattern::Dotted,
+                                            "Dotted",
+                                        );
+                                    });
+                                changed |= style.line_pattern != previous;
+                            }
                             if changed {
                                 state
                                     .project

@@ -1,7 +1,7 @@
 //! Deterministic SVG rendering from immutable geometry snapshots.
 #![forbid(unsafe_code)]
 use geodesic_core::{GeometricObject, GeometrySnapshot, Renderability, STANDARD_PRECISION};
-use geodesic_io::{ObjectStyle, Project};
+use geodesic_io::{LinePattern, ObjectStyle, PointShape, Project};
 use std::fmt::Write;
 /// Renders real finite points and real affine lines; non-real objects are omitted.
 #[must_use]
@@ -29,11 +29,7 @@ fn render_with_styles(snapshot: &GeometrySnapshot, project: Option<&Project>) ->
             let style = project
                 .map(|project| geodesic_io::effective_style(project, label))
                 .unwrap_or_default();
-            let _ = write!(
-                svg,
-                "<circle id=\"{label}\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
-                point.x, -point.y, style.size, style.color, style.opacity
-            );
+            write_point(&mut svg, label, point.x, -point.y, &style);
         }
         if let GeometricObject::Line(line) = object
             && let Renderability::Renderable(line) = line.renderability()
@@ -50,8 +46,13 @@ fn render_with_styles(snapshot: &GeometrySnapshot, project: Option<&Project>) ->
             );
             let _ = write!(
                 svg,
-                "<line id=\"{label}\" x1=\"{x1}\" y1=\"{}\" x2=\"{x2}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"/>",
-                -y1, -y2, style.color, style.size, style.opacity
+                "<line id=\"{label}\" x1=\"{x1}\" y1=\"{}\" x2=\"{x2}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"{} />",
+                -y1,
+                -y2,
+                style.color,
+                style.size,
+                style.opacity,
+                dash_attributes(&style)
             );
         }
         if let GeometricObject::Segment(segment) = object {
@@ -93,9 +94,78 @@ fn write_bounded_line(
     let style = style_for(project, label);
     let _ = write!(
         svg,
-        "<line id=\"{label}\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"/>",
-        start.x, -start.y, end.x, -end.y, style.color, style.size, style.opacity
+        "<line id=\"{label}\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"{} />",
+        start.x,
+        -start.y,
+        end.x,
+        -end.y,
+        style.color,
+        style.size,
+        style.opacity,
+        dash_attributes(&style)
     );
+}
+
+fn dash_attributes(style: &ObjectStyle) -> &'static str {
+    match style.line_pattern {
+        LinePattern::Solid => "",
+        LinePattern::Dashed => " stroke-dasharray=\"8 5\"",
+        LinePattern::Dotted => " stroke-dasharray=\"1 4\"",
+    }
+}
+
+fn write_point(
+    svg: &mut String,
+    label: &geodesic_core::Label,
+    x: f64,
+    y: f64,
+    style: &ObjectStyle,
+) {
+    match style.point_shape {
+        PointShape::Circle => {
+            let _ = write!(
+                svg,
+                "<circle id=\"{label}\" cx=\"{x}\" cy=\"{y}\" r=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                style.size, style.color, style.opacity
+            );
+        }
+        PointShape::Square => {
+            let side = style.size * 2.0;
+            let _ = write!(
+                svg,
+                "<rect id=\"{label}\" x=\"{}\" y=\"{}\" width=\"{side}\" height=\"{side}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                x - style.size,
+                y - style.size,
+                style.color,
+                style.opacity
+            );
+        }
+        PointShape::Diamond | PointShape::Triangle => {
+            let points = if matches!(style.point_shape, PointShape::Diamond) {
+                format!(
+                    "{x},{} {},{y} {x},{} {},{y}",
+                    y - style.size,
+                    x + style.size,
+                    y + style.size,
+                    x - style.size
+                )
+            } else {
+                format!(
+                    "{x},{} {},{} {},{}",
+                    y - style.size,
+                    x + style.size,
+                    y + style.size,
+                    x - style.size,
+                    y + style.size
+                )
+            };
+            let _ = write!(
+                svg,
+                "<polygon id=\"{label}\" points=\"{points}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                style.color, style.opacity
+            );
+        }
+    }
 }
 
 fn write_vector_head(
