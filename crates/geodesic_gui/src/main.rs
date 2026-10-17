@@ -78,8 +78,19 @@ fn canvas_input(
     let Projection::Orthographic(orthographic) = projection.as_mut() else {
         return;
     };
-    for event in mouse_wheel.read() {
-        orthographic.scale = (orthographic.scale * (1.0 - event.y * 0.1)).clamp(0.1, 100.0);
+    let cursor = windows.single().ok().and_then(Window::cursor_position);
+    if let (Ok(window), Some(cursor)) = (windows.single(), cursor) {
+        let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+        for event in mouse_wheel.read() {
+            let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
+                continue;
+            };
+            orthographic.scale = next_scale;
+            let after = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+            let correction = anchor - after;
+            transform.translation.x += correction.x;
+            transform.translation.y += correction.y;
+        }
     }
     if mouse_buttons.pressed(MouseButton::Middle) {
         for event in mouse_motion.read() {
@@ -88,16 +99,10 @@ fn canvas_input(
         }
     }
 
-    let (Ok(window), Some(cursor)) = (
-        windows.single(),
-        windows.single().ok().and_then(Window::cursor_position),
-    ) else {
+    let (Ok(window), Some(cursor)) = (windows.single(), cursor) else {
         return;
     };
-    let world = Vec2::new(
-        (cursor.x - window.width() / 2.0) * orthographic.scale + transform.translation.x,
-        (window.height() / 2.0 - cursor.y) * orthographic.scale + transform.translation.y,
-    );
+    let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
     if mouse_buttons.just_pressed(MouseButton::Left) {
         state.selected = state
             .project
@@ -148,6 +153,24 @@ fn canvas_input(
         state.dragging = None;
         state.pan_cursor = None;
     }
+}
+
+fn screen_to_world(cursor: Vec2, window: &Window, translation: Vec3, scale: f32) -> Vec2 {
+    Vec2::new(
+        (cursor.x - window.width() / 2.0) * scale + translation.x,
+        (window.height() / 2.0 - cursor.y) * scale + translation.y,
+    )
+}
+
+fn next_zoom_scale(current: f32, factor: f32) -> Option<f32> {
+    let next = current * factor;
+    (current.is_finite()
+        && current > 0.0
+        && factor.is_finite()
+        && factor > 0.0
+        && next.is_finite()
+        && next > f32::MIN_POSITIVE)
+        .then_some(next)
 }
 
 #[allow(
@@ -1044,8 +1067,15 @@ mod tests {
     }
 
     #[test]
-    fn zoom_clamp_preserves_a_positive_render_scale() {
-        assert!(((1.0_f32 * (1.0 - 1_000.0 * 0.1)).clamp(0.1, 100.0) - 0.1).abs() < f32::EPSILON);
+    fn zoom_rejects_nonpositive_factors() {
+        assert_eq!(super::next_zoom_scale(1.0, 0.0), None);
+    }
+
+    #[test]
+    fn zoom_accepts_large_finite_scales_but_rejects_invalid_results() {
+        assert_eq!(super::next_zoom_scale(1_000.0, 2.0), Some(2_000.0));
+        assert_eq!(super::next_zoom_scale(1.0, 0.0), None);
+        assert_eq!(super::next_zoom_scale(f32::INFINITY, 2.0), None);
     }
 
     #[test]
