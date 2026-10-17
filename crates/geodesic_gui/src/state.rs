@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use bevy::prelude::{Handle, Image, Resource, Vec2};
 use geodesic_core::{Label, ProjectiveLine, ProjectivePoint};
 use geodesic_io::Project;
@@ -12,6 +14,8 @@ pub(crate) const MAX_COMPLETIONS: usize = 8;
 #[derive(Resource, Default)]
 pub(crate) struct GuiState {
     pub(crate) project: Project,
+    /// Native location of the persisted project, if it has been opened or saved.
+    pub(crate) document_path: Option<PathBuf>,
     pub(crate) command: String,
     pub(crate) command_bar_visible: bool,
     pub(crate) command_bar_focus_requested: bool,

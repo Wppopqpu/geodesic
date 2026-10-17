@@ -11,8 +11,13 @@ struct Cli {
 enum Command {
     /// Validates a native project document.
     Validate { project: String },
-    /// Renders a native project document to deterministic SVG on stdout.
-    RenderSvg { project: String },
+    /// Renders a native project document to deterministic SVG on stdout or a file.
+    RenderSvg {
+        project: String,
+        /// Writes SVG to this file instead of stdout.
+        #[arg(short, long)]
+        output: Option<String>,
+    },
     /// Imports a read-only `.ggb` archive and prints native project data.
     Import { archive: String },
     /// Evaluates a project and prints a stable object summary.
@@ -121,10 +126,16 @@ fn main() -> ExitCode {
                     .map(|_| "valid".to_owned())
                     .map_err(|error| error.to_string())
             }),
-        Command::RenderSvg { project } => fs::read_to_string(project)
+        Command::RenderSvg { project, output } => fs::read_to_string(project)
             .map_err(|error| error.to_string())
             .and_then(|source| geodesic_io::load(&source).map_err(|error| error.to_string()))
-            .and_then(|project| geodesic_svg::render_project(&project).map_err(|error| error.to_string())),
+            .and_then(|project| geodesic_svg::render_project(&project).map_err(|error| error.to_string()))
+            .and_then(|svg| match output {
+                Some(path) => fs::write(&path, svg)
+                    .map(|()| format!("rendered {path}"))
+                    .map_err(|error| error.to_string()),
+                None => Ok(svg),
+            }),
         Command::Import { archive } => fs::read(archive)
             .map_err(|error| error.to_string())
             .and_then(|bytes| geodesic_io::import_ggb(&bytes).map_err(|error| error.to_string()))

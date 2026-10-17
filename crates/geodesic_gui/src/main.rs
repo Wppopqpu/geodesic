@@ -5,6 +5,7 @@ mod app;
 mod canvas;
 mod chrome;
 mod command;
+mod document;
 mod path_renderer;
 mod presentation;
 mod state;

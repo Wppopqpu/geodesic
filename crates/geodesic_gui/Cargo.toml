@@ -9,8 +9,12 @@ bevy_egui = "0.43.1"
 # General path fill/stroke tessellation (including Bezier curves) is not
 # provided by Bevy's primitive meshes or gizmos. Kept inside the GUI adapter.
 lyon_tessellation = "1.0.22"
+# Native desktop dialogs are required for user-selected project and SVG paths;
+# Bevy and egui intentionally do not provide an OS file-picker abstraction.
+rfd = "0.17.2"
 geodesic_core = { path = "../geodesic_core" }
 geodesic_io = { path = "../geodesic_io" }
+geodesic_svg = { path = "../geodesic_svg" }
 
 [lints]
 workspace = true

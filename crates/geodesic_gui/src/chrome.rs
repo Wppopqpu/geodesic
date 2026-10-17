@@ -10,6 +10,9 @@ use crate::{
     command::{
         command_completions, command_hint, history_next, history_previous, replace_completion,
     },
+    document::{
+        DEFAULT_PROJECT_FILE_NAME, export_svg, load_project, native_project_path, save_project,
+    },
     presentation::{
         apply_theme, draw_axis_labels, egui_color, hex_color, submit_command, wrapped_text_height,
     },
@@ -132,6 +135,8 @@ fn toolbar_contents(
     context: &egui::Context,
     system_theme: Option<WindowTheme>,
 ) {
+    file_menu(ui, state);
+    ui.separator();
     for tools in TOOL_STACKS {
         tool_stack(ui, state, icons, tools);
         ui.separator();
@@ -155,6 +160,78 @@ fn toolbar_contents(
     {
         state.about_dialog = Some(AboutDialog);
     }
+}
+
+fn file_menu(ui: &mut egui::Ui, state: &mut GuiState) {
+    ui.menu_button("File", |ui| {
+        if ui.button("Open…").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Geodesic project", &["lisp"])
+                .add_filter("GeoGebra archive", &["ggb"])
+                .pick_file()
+            {
+                match load_project(&path) {
+                    Ok((project, message)) => {
+                        let imported = path.extension().is_some_and(|extension| extension == "ggb");
+                        state.project = project;
+                        state.document_path = (!imported).then_some(path);
+                        state.selected = None;
+                        state.tool_inputs.clear();
+                        state.message = message;
+                    }
+                    Err(error) => state.message = format!("error: {error}"),
+                }
+            }
+            ui.close();
+        }
+        if ui.button("Save").clicked() {
+            save_from_menu(state, false);
+            ui.close();
+        }
+        if ui.button("Save as…").clicked() {
+            save_from_menu(state, true);
+            ui.close();
+        }
+        ui.separator();
+        if ui.button("Export SVG…").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Scalable Vector Graphics", &["svg"])
+                .set_file_name("untitled.svg")
+                .save_file()
+            {
+                state.message = export_svg(&path, &state.project).map_or_else(
+                    |error| format!("error: {error}"),
+                    |()| format!("exported {}", path.display()),
+                );
+            }
+            ui.close();
+        }
+    });
+}
+
+fn save_from_menu(state: &mut GuiState, force_choose_path: bool) {
+    let path = if force_choose_path {
+        None
+    } else {
+        state.document_path.clone()
+    }
+    .or_else(|| {
+        rfd::FileDialog::new()
+            .add_filter("Geodesic project", &["lisp"])
+            .set_file_name(DEFAULT_PROJECT_FILE_NAME)
+            .save_file()
+            .map(|path| native_project_path(&path))
+    });
+    let Some(path) = path else {
+        return;
+    };
+    state.message = save_project(&path, &state.project).map_or_else(
+        |error| format!("error: {error}"),
+        |()| {
+            state.document_path = Some(path.clone());
+            format!("saved {}", path.display())
+        },
+    );
 }
 
 fn show_attribution_window(context: &egui::Context, about_dialog: &mut Option<AboutDialog>) {
