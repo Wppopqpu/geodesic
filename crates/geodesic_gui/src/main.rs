@@ -10,6 +10,10 @@ use bevy_egui::{EguiContexts, EguiPlugin, egui};
 use geodesic_core::{Construction, GeoCommand, GeometricObject, Label, ProjectivePoint};
 use geodesic_io::Project;
 
+const SIDE_PANEL_WIDTH: f32 = 220.0;
+const TOOLBAR_HEIGHT: f32 = 36.0;
+const COMMAND_BAR_HEIGHT: f32 = 44.0;
+
 #[derive(Resource, Default)]
 struct GuiState {
     project: Project,
@@ -57,7 +61,9 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    let mut projection = OrthographicProjection::default_2d();
+    projection.scale = 0.02;
+    commands.spawn((Camera2d, Projection::Orthographic(projection)));
 }
 
 #[allow(
@@ -99,11 +105,11 @@ fn draw_canvas(
     camera: Query<(&Transform, &Projection), With<Camera2d>>,
     state: Res<GuiState>,
 ) {
-    let Some((left, right, bottom, top)) = visible_world_bounds(&windows, &camera) else {
+    let Some((left, right, bottom, top, scale)) = visible_world_bounds(&windows, &camera) else {
         return;
     };
 
-    let step = grid_step(left, right, bottom, top);
+    let step = grid_step(scale);
     let first_x = (left / step).floor() * step;
     let first_y = (bottom / step).floor() * step;
     let x_count = (((right - first_x) / step).ceil().max(0.0) as usize) + 1;
@@ -152,7 +158,15 @@ fn draw_canvas(
                 if a.im.abs() < geodesic_core::STANDARD_PRECISION
                     && b.im.abs() < geodesic_core::STANDARD_PRECISION
                     && c.im.abs() < geodesic_core::STANDARD_PRECISION
-                    && let Some((start, end)) = clipped_line(a.re as f32, b.re as f32, c.re as f32)
+                    && let Some((start, end)) = clipped_line(
+                        a.re as f32,
+                        b.re as f32,
+                        c.re as f32,
+                        left,
+                        right,
+                        bottom,
+                        top,
+                    )
                 {
                     let style = geodesic_io::effective_style(&state.project, label);
                     gizmos.line_2d(start, end, bevy_color(&style.color));
@@ -165,7 +179,7 @@ fn draw_canvas(
 fn visible_world_bounds(
     windows: &Query<&Window, With<PrimaryWindow>>,
     camera: &Query<(&Transform, &Projection), With<Camera2d>>,
-) -> Option<(f32, f32, f32, f32)> {
+) -> Option<(f32, f32, f32, f32, f32)> {
     let window = windows.single().ok()?;
     let (transform, projection) = camera.single().ok()?;
     let Projection::Orthographic(orthographic) = projection else {
@@ -178,31 +192,53 @@ fn visible_world_bounds(
         transform.translation.x + half_width,
         transform.translation.y - half_height,
         transform.translation.y + half_height,
+        orthographic.scale,
     ))
 }
 
-/// Keeps a zoomed-out canvas responsive while retaining unit grid lines at normal zoom.
-fn grid_step(left: f32, right: f32, bottom: f32, top: f32) -> f32 {
-    const MAX_GRID_LINES_PER_AXIS: f32 = 2_000.0;
-    let span = (right - left).max(top - bottom);
-    (span / MAX_GRID_LINES_PER_AXIS).ceil().max(1.0)
+/// Chooses a 1/2/5 grid step that keeps adjacent grid lines about 50 pixels apart.
+fn grid_step(scale: f32) -> f32 {
+    nice_step((50.0 * scale).max(f32::MIN_POSITIVE))
 }
 
-fn clipped_line(a: f32, b: f32, c: f32) -> Option<(Vec2, Vec2)> {
-    const EXTENT: f32 = 10.0;
+fn nice_step(minimum: f32) -> f32 {
+    let exponent = minimum.log10().floor();
+    let magnitude = 10.0_f32.powf(exponent);
+    let normalized = minimum / magnitude;
+    let multiplier = if normalized <= 1.0 {
+        1.0
+    } else if normalized <= 2.0 {
+        2.0
+    } else if normalized <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    multiplier * magnitude
+}
+
+fn clipped_line(
+    a: f32,
+    b: f32,
+    c: f32,
+    left: f32,
+    right: f32,
+    bottom: f32,
+    top: f32,
+) -> Option<(Vec2, Vec2)> {
     let mut points = Vec::with_capacity(4);
     if b.abs() >= geodesic_core::STANDARD_PRECISION_F32 {
-        for x in [-EXTENT, EXTENT] {
+        for x in [left, right] {
             let y = -(a * x + c) / b;
-            if (-EXTENT..=EXTENT).contains(&y) {
+            if (bottom..=top).contains(&y) {
                 points.push(Vec2::new(x, y));
             }
         }
     }
     if a.abs() >= geodesic_core::STANDARD_PRECISION_F32 {
-        for y in [-EXTENT, EXTENT] {
+        for y in [bottom, top] {
             let x = -(b * y + c) / a;
-            if (-EXTENT..=EXTENT).contains(&x)
+            if (left..=right).contains(&x)
                 && !points.iter().any(|point| {
                     point.distance(Vec2::new(x, y)) < geodesic_core::STANDARD_PRECISION_F32
                 })
@@ -301,184 +337,193 @@ fn application_chrome(
         state.command_bar_visible = true;
         state.command_bar_focus_requested = true;
     }
-    draw_axis_labels(context, &windows, &camera);
-    egui::TopBottomPanel::top("toolbar").show(context, |ui| {
-        ui.horizontal(|ui| {
-            ui.heading("Geodesic");
-            ui.label("Real affine canvas · complex projective kernel");
-            ui.separator();
-            ui.label("Theme:");
-            for (theme, name) in [
-                (UiTheme::System, "System"),
-                (UiTheme::Light, "Light"),
-                (UiTheme::Dark, "Dark"),
-            ] {
-                if ui.selectable_label(state.theme == theme, name).clicked() {
-                    state.theme = theme;
-                    apply_theme(context, theme);
+    draw_axis_labels(context, &windows, &camera, state.command_bar_visible);
+    egui::TopBottomPanel::top("toolbar")
+        .exact_height(TOOLBAR_HEIGHT)
+        .show(context, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading("Geodesic");
+                ui.label("Real affine canvas · complex projective kernel");
+                ui.separator();
+                ui.label("Theme:");
+                for (theme, name) in [
+                    (UiTheme::System, "System"),
+                    (UiTheme::Light, "Light"),
+                    (UiTheme::Dark, "Dark"),
+                ] {
+                    if ui.selectable_label(state.theme == theme, name).clicked() {
+                        state.theme = theme;
+                        apply_theme(context, theme);
+                    }
+                }
+            });
+        });
+    egui::SidePanel::left("algebra")
+        .exact_width(SIDE_PANEL_WIDTH)
+        .show(context, |ui| {
+            ui.heading("Algebra");
+            match state.project.construction.evaluate() {
+                Ok(snapshot) => {
+                    for (label, object) in snapshot.iter() {
+                        ui.label(format!("{label}: {object:?}"));
+                    }
+                }
+                Err(error) => {
+                    ui.colored_label(egui::Color32::RED, error.to_string());
                 }
             }
         });
-    });
-    egui::SidePanel::left("algebra").show(context, |ui| {
-        ui.heading("Algebra");
-        match state.project.construction.evaluate() {
-            Ok(snapshot) => {
-                for (label, object) in snapshot.iter() {
-                    ui.label(format!("{label}: {object:?}"));
-                }
-            }
-            Err(error) => {
-                ui.colored_label(egui::Color32::RED, error.to_string());
-            }
-        }
-    });
-    egui::SidePanel::right("style_editor").show(context, |ui| {
-        ui.heading("Style");
-        if let Some(label) = state.selected.clone() {
-            ui.label(label.to_string());
-            let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
-            if ui.button("Create emphasis preset").clicked()
-                && let Ok(preset) = Label::parse("emphasis")
-            {
-                state
-                    .project
-                    .style_presets
-                    .entry(preset)
-                    .or_insert(geodesic_io::ObjectStyle {
-                        color: "#d32f2f".to_owned(),
-                        size: 0.25,
-                        opacity: 1.0,
-                    });
-            }
-            for preset in presets {
-                if ui.button(format!("Use preset {preset}")).clicked() {
-                    state.project.object_presets.insert(label.clone(), preset);
-                    state.project.object_styles.remove(&label);
-                }
-            }
-            if state.project.object_presets.contains_key(&label) {
-                let preset = &state.project.object_presets[&label];
-                ui.label(format!("Using preset {preset}"));
-                if ui.button("Use direct override").clicked() {
-                    state.project.object_presets.remove(&label);
+    egui::SidePanel::right("style_editor")
+        .exact_width(SIDE_PANEL_WIDTH)
+        .show(context, |ui| {
+            ui.heading("Style");
+            if let Some(label) = state.selected.clone() {
+                ui.label(label.to_string());
+                let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
+                if ui.button("Create emphasis preset").clicked()
+                    && let Ok(preset) = Label::parse("emphasis")
+                {
                     state
                         .project
-                        .object_styles
-                        .entry(label.clone())
-                        .or_default();
+                        .style_presets
+                        .entry(preset)
+                        .or_insert(geodesic_io::ObjectStyle {
+                            color: "#d32f2f".to_owned(),
+                            size: 0.25,
+                            opacity: 1.0,
+                        });
+                }
+                for preset in presets {
+                    if ui.button(format!("Use preset {preset}")).clicked() {
+                        state.project.object_presets.insert(label.clone(), preset);
+                        state.project.object_styles.remove(&label);
+                    }
+                }
+                if state.project.object_presets.contains_key(&label) {
+                    let preset = &state.project.object_presets[&label];
+                    ui.label(format!("Using preset {preset}"));
+                    if ui.button("Use direct override").clicked() {
+                        state.project.object_presets.remove(&label);
+                        state
+                            .project
+                            .object_styles
+                            .entry(label.clone())
+                            .or_default();
+                    }
+                } else {
+                    let style = state.project.object_styles.entry(label).or_default();
+                    let mut color = egui_color(&style.color);
+                    if ui.color_edit_button_srgba(&mut color).changed() {
+                        style.color = hex_color(color);
+                    }
+                    ui.add(egui::Slider::new(&mut style.size, 0.02..=1.0).text("Size"));
+                    ui.add(egui::Slider::new(&mut style.opacity, 0.0..=1.0).text("Opacity"));
                 }
             } else {
-                let style = state.project.object_styles.entry(label).or_default();
-                let mut color = egui_color(&style.color);
-                if ui.color_edit_button_srgba(&mut color).changed() {
-                    style.color = hex_color(color);
-                }
-                ui.add(egui::Slider::new(&mut style.size, 0.02..=1.0).text("Size"));
-                ui.add(egui::Slider::new(&mut style.opacity, 0.0..=1.0).text("Opacity"));
+                ui.label("Select a real affine point to edit its direct style.");
             }
-        } else {
-            ui.label("Select a real affine point to edit its direct style.");
-        }
-    });
+        });
     if !state.command_bar_visible {
         return;
     }
 
-    egui::TopBottomPanel::bottom("command_bar").show(context, |ui| {
-        let candidates = command_completions(&state.project.construction, &state.command);
-        if state.completion_query != state.command {
-            let command = state.command.clone();
-            state.completion_query.clone_from(&command);
-            state.completion_index = 0;
-        }
-        if !candidates.is_empty() {
-            state.completion_index %= candidates.len();
-        }
+    egui::TopBottomPanel::bottom("command_bar")
+        .exact_height(COMMAND_BAR_HEIGHT)
+        .show(context, |ui| {
+            let candidates = command_completions(&state.project.construction, &state.command);
+            if state.completion_query != state.command {
+                let command = state.command.clone();
+                state.completion_query.clone_from(&command);
+                state.completion_index = 0;
+            }
+            if !candidates.is_empty() {
+                state.completion_index %= candidates.len();
+            }
 
-        ui.horizontal(|ui| {
-            ui.label(":");
-            ui.vertical(|ui| {
-                let response = ui.text_edit_singleline(&mut state.command);
-                let input = ui.input(|input| {
-                    (
-                        input.key_pressed(egui::Key::Tab),
-                        input.key_pressed(egui::Key::ArrowDown),
-                        input.key_pressed(egui::Key::ArrowUp),
-                        input.key_pressed(egui::Key::Enter),
-                        input.key_pressed(egui::Key::Escape),
-                    )
-                });
-                if state.command_bar_focus_requested {
-                    response.request_focus();
-                    state.command_bar_focus_requested = false;
-                }
-                let focused = response.has_focus();
-                let mut accept_completion = false;
-
-                if focused && !candidates.is_empty() {
-                    if input.1 {
-                        state.completion_index = (state.completion_index + 1) % candidates.len();
-                    } else if input.2 {
-                        state.completion_index = state
-                            .completion_index
-                            .checked_sub(1)
-                            .unwrap_or(candidates.len() - 1);
-                    }
-                    accept_completion = input.0;
-                } else if focused && input.1 {
-                    let history = state.command_history.clone();
-                    let mut command = state.command.clone();
-                    let mut cursor = state.history_cursor;
-                    history_next(&mut command, &mut cursor, &history);
-                    state.command = command;
-                    state.history_cursor = cursor;
-                } else if focused && input.2 {
-                    let history = state.command_history.clone();
-                    let mut command = state.command.clone();
-                    let mut cursor = state.history_cursor;
-                    history_previous(&mut command, &mut cursor, &history);
-                    state.command = command;
-                    state.history_cursor = cursor;
-                }
-
-                if accept_completion {
-                    state.command =
-                        replace_completion(&state.command, &candidates[state.completion_index]);
-                } else if focused && input.3 {
-                    let command = std::mem::take(&mut state.command);
-                    if !command.trim().is_empty() {
-                        state.command_history.push(command.clone());
-                    }
-                    state.history_cursor = None;
-                    state.completion_query.clear();
-                    state.message = execute_command(&mut state.project.construction, &command)
-                        .unwrap_or_else(|error| format!("error: {error}"));
-                    state.command_bar_visible = false;
-                } else if focused && input.4 {
-                    state.command_bar_visible = false;
-                }
-
-                if !candidates.is_empty() {
-                    egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.set_min_width(response.rect.width());
-                        for (index, candidate) in candidates.iter().enumerate() {
-                            if ui
-                                .selectable_label(index == state.completion_index, candidate)
-                                .clicked()
-                            {
-                                state.command = replace_completion(&state.command, candidate);
-                            }
-                        }
+            ui.horizontal(|ui| {
+                ui.label(":");
+                ui.vertical(|ui| {
+                    let response = ui.text_edit_singleline(&mut state.command);
+                    let input = ui.input(|input| {
+                        (
+                            input.key_pressed(egui::Key::Tab),
+                            input.key_pressed(egui::Key::ArrowDown),
+                            input.key_pressed(egui::Key::ArrowUp),
+                            input.key_pressed(egui::Key::Enter),
+                            input.key_pressed(egui::Key::Escape),
+                        )
                     });
-                }
-                if !state.message.is_empty() {
-                    ui.label(&state.message);
-                }
+                    if state.command_bar_focus_requested {
+                        response.request_focus();
+                        state.command_bar_focus_requested = false;
+                    }
+                    let focused = response.has_focus();
+                    let mut accept_completion = false;
+
+                    if focused && !candidates.is_empty() {
+                        if input.1 {
+                            state.completion_index =
+                                (state.completion_index + 1) % candidates.len();
+                        } else if input.2 {
+                            state.completion_index = state
+                                .completion_index
+                                .checked_sub(1)
+                                .unwrap_or(candidates.len() - 1);
+                        }
+                        accept_completion = input.0;
+                    } else if focused && input.1 {
+                        let history = state.command_history.clone();
+                        let mut command = state.command.clone();
+                        let mut cursor = state.history_cursor;
+                        history_next(&mut command, &mut cursor, &history);
+                        state.command = command;
+                        state.history_cursor = cursor;
+                    } else if focused && input.2 {
+                        let history = state.command_history.clone();
+                        let mut command = state.command.clone();
+                        let mut cursor = state.history_cursor;
+                        history_previous(&mut command, &mut cursor, &history);
+                        state.command = command;
+                        state.history_cursor = cursor;
+                    }
+
+                    if accept_completion {
+                        state.command =
+                            replace_completion(&state.command, &candidates[state.completion_index]);
+                    } else if focused && input.3 {
+                        let command = std::mem::take(&mut state.command);
+                        if !command.trim().is_empty() {
+                            state.command_history.push(command.clone());
+                        }
+                        state.history_cursor = None;
+                        state.completion_query.clear();
+                        state.message = execute_command(&mut state.project.construction, &command)
+                            .unwrap_or_else(|error| format!("error: {error}"));
+                        state.command_bar_visible = false;
+                    } else if focused && input.4 {
+                        state.command_bar_visible = false;
+                    }
+
+                    if !candidates.is_empty() {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                            ui.set_min_width(response.rect.width());
+                            for (index, candidate) in candidates.iter().enumerate() {
+                                if ui
+                                    .selectable_label(index == state.completion_index, candidate)
+                                    .clicked()
+                                {
+                                    state.command = replace_completion(&state.command, candidate);
+                                }
+                            }
+                        });
+                    }
+                    if !state.message.is_empty() {
+                        ui.label(&state.message);
+                    }
+                });
             });
+            ui.small(command_hint(&state.command));
         });
-        ui.small(command_hint(&state.command));
-    });
 }
 
 #[allow(
@@ -491,53 +536,87 @@ fn draw_axis_labels(
     context: &egui::Context,
     windows: &Query<&Window, With<PrimaryWindow>>,
     camera: &Query<(&Transform, &Projection), With<Camera2d>>,
+    command_bar_visible: bool,
 ) {
-    let Some((left, right, bottom, top)) = visible_world_bounds(windows, camera) else {
+    let Some((left, right, bottom, top, scale)) = visible_world_bounds(windows, camera) else {
         return;
     };
     let Ok(window) = windows.single() else {
         return;
     };
+    let canvas_rect = egui::Rect::from_min_max(
+        egui::pos2(SIDE_PANEL_WIDTH, TOOLBAR_HEIGHT),
+        egui::pos2(
+            window.width() - SIDE_PANEL_WIDTH,
+            window.height()
+                - if command_bar_visible {
+                    COMMAND_BAR_HEIGHT
+                } else {
+                    0.0
+                },
+        ),
+    );
     let Ok((transform, Projection::Orthographic(orthographic))) = camera.single() else {
         return;
     };
-    let grid_step = grid_step(left, right, bottom, top);
-    let label_step = (24.0 * orthographic.scale).ceil().max(grid_step);
+    let grid_step = grid_step(scale);
+    let label_step = nice_step((70.0 * scale).max(grid_step));
     let first_x = (left / label_step).ceil() * label_step;
     let first_y = (bottom / label_step).ceil() * label_step;
     let axis_color = egui::Color32::from_rgb(85, 85, 95);
 
-    for index in 0..=((right - first_x) / label_step).floor().max(0.0) as usize {
-        let value = first_x + index as f32 * label_step;
-        if value.abs() < grid_step * 0.5 {
-            continue;
+    let x_axis_y = window.height() / 2.0 - transform.translation.y / orthographic.scale;
+    let y_axis_x = window.width() / 2.0 - transform.translation.x / orthographic.scale;
+    let label_margin = 16.0;
+    if (canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin).contains(&x_axis_y)
+    {
+        for index in 0..=((right - first_x) / label_step).floor().max(0.0) as usize {
+            let value = first_x + index as f32 * label_step;
+            if value.abs() < grid_step * 0.5 {
+                continue;
+            }
+            let screen_x =
+                window.width() / 2.0 + (value - transform.translation.x) / orthographic.scale;
+            let screen_y = x_axis_y;
+            if !(canvas_rect.left() + label_margin..=canvas_rect.right() - label_margin)
+                .contains(&screen_x)
+            {
+                continue;
+            }
+            axis_label(
+                context,
+                egui::pos2(screen_x + 3.0, screen_y + 3.0),
+                value,
+                label_step,
+                axis_color,
+                "x",
+            );
         }
-        let screen_x =
-            window.width() / 2.0 + (value - transform.translation.x) / orthographic.scale;
-        let screen_y = window.height() / 2.0 - transform.translation.y / orthographic.scale;
-        axis_label(
-            context,
-            egui::pos2(screen_x + 3.0, screen_y + 3.0),
-            value,
-            axis_color,
-            "x",
-        );
     }
-    for index in 0..=((top - first_y) / label_step).floor().max(0.0) as usize {
-        let value = first_y + index as f32 * label_step;
-        if value.abs() < grid_step * 0.5 {
-            continue;
+    if (canvas_rect.left() + label_margin..=canvas_rect.right() - label_margin).contains(&y_axis_x)
+    {
+        for index in 0..=((top - first_y) / label_step).floor().max(0.0) as usize {
+            let value = first_y + index as f32 * label_step;
+            if value.abs() < grid_step * 0.5 {
+                continue;
+            }
+            let screen_x = y_axis_x + 3.0;
+            let screen_y =
+                window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
+            if !(canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin)
+                .contains(&screen_y)
+            {
+                continue;
+            }
+            axis_label(
+                context,
+                egui::pos2(screen_x, screen_y - 8.0),
+                value,
+                label_step,
+                axis_color,
+                "y",
+            );
         }
-        let screen_x = window.width() / 2.0 + 3.0;
-        let screen_y =
-            window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
-        axis_label(
-            context,
-            egui::pos2(screen_x, screen_y - 8.0),
-            value,
-            axis_color,
-            "y",
-        );
     }
 }
 
@@ -545,6 +624,7 @@ fn axis_label(
     context: &egui::Context,
     position: egui::Pos2,
     value: f32,
+    step: f32,
     color: egui::Color32,
     axis: &str,
 ) {
@@ -553,11 +633,40 @@ fn axis_label(
         .interactable(false)
         .show(context, |ui| {
             ui.label(
-                egui::RichText::new(format!("{value:.0}"))
+                egui::RichText::new(format_coordinate(value, step))
                     .size(11.0)
                     .color(color),
             );
         });
+}
+
+fn format_coordinate(value: f32, step: f32) -> String {
+    let value = if value.abs() < step * 1e-4 {
+        0.0
+    } else {
+        value
+    };
+    let decimals = if step >= 1.0 {
+        0
+    } else if step >= 0.1 {
+        1
+    } else if step >= 0.01 {
+        2
+    } else if step >= 0.001 {
+        3
+    } else if step >= 0.0001 {
+        4
+    } else if step >= 0.00001 {
+        5
+    } else {
+        6
+    };
+    let fixed = format!("{value:.decimals$}");
+    if decimals == 0 {
+        fixed
+    } else {
+        fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
+    }
 }
 
 fn apply_theme(context: &egui::Context, theme: UiTheme) {
@@ -891,8 +1000,24 @@ mod tests {
 
     #[test]
     fn clips_real_line_to_initial_canvas_extent() {
-        let (start, end) = super::clipped_line(0.0, 1.0, 0.0).expect("horizontal line");
+        let (start, end) =
+            super::clipped_line(0.0, 1.0, 0.0, -10.0, 10.0, -10.0, 10.0).expect("horizontal line");
         assert_eq!(start, bevy::prelude::Vec2::new(-10.0, 0.0));
         assert_eq!(end, bevy::prelude::Vec2::new(10.0, 0.0));
+    }
+
+    #[test]
+    fn selects_125_grid_steps_from_camera_scale() {
+        for (scale, expected) in [(0.02, 1.0), (0.2, 10.0), (0.002, 0.1)] {
+            assert!((super::grid_step(scale) - expected).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn formats_tick_values_for_the_visible_grid_scale() {
+        assert_eq!(super::format_coordinate(12.0, 1.0), "12");
+        assert_eq!(super::format_coordinate(0.5, 0.5), "0.5");
+        assert_eq!(super::format_coordinate(0.25, 0.05), "0.25");
+        assert_eq!(super::format_coordinate(-0.000_001, 0.1), "0");
     }
 }
