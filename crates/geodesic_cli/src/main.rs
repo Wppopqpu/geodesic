@@ -113,6 +113,12 @@ enum Operation {
         vertex: String,
         second: String,
     },
+    AddLineAngleBisectors {
+        first_label: String,
+        second_label: String,
+        first: String,
+        second: String,
+    },
     Undo,
     Redo,
 }
@@ -323,6 +329,20 @@ fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> 
                 label: parse_label(&label)?,
                 first: parse_label(&first)?,
                 vertex: parse_label(&vertex)?,
+                second: parse_label(&second)?,
+            },
+        ),
+        Operation::AddLineAngleBisectors {
+            first_label,
+            second_label,
+            first,
+            second,
+        } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddLineAngleBisectors {
+                first_label: parse_label(&first_label)?,
+                second_label: parse_label(&second_label)?,
+                first: parse_label(&first)?,
                 second: parse_label(&second)?,
             },
         ),

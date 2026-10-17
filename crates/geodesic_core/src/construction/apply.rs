@@ -2,7 +2,7 @@ use std::collections::btree_map::Entry;
 
 use crate::{CommandError, Label};
 
-use super::{Construction, GeoCommand, ObjectDefinition};
+use super::{Construction, GeoCommand, LineAngleBisectorBranch, ObjectDefinition};
 
 impl Construction {
     /// Applies one command after validating all referenced labels and object kinds.
@@ -172,10 +172,48 @@ impl Construction {
                     },
                 )
             }
-            GeoCommand::Remove { label } => self
-                .definitions
-                .remove(&label)
-                .map_or_else(|| Err(CommandError::UnknownLabel { label }), |_| Ok(())),
+            GeoCommand::AddLineAngleBisectors {
+                first_label,
+                second_label,
+                first,
+                second,
+            } => {
+                if first_label == second_label {
+                    return Err(CommandError::DuplicateLabel { label: first_label });
+                }
+                self.require_supporting_line(&first)?;
+                self.require_supporting_line(&second)?;
+                for label in [&first_label, &second_label] {
+                    if self.definitions.contains_key(label) {
+                        return Err(CommandError::DuplicateLabel {
+                            label: label.clone(),
+                        });
+                    }
+                }
+                let group = first_label.clone();
+                self.definitions.insert(
+                    first_label.clone(),
+                    ObjectDefinition::LineAngleBisector {
+                        group: group.clone(),
+                        peer: second_label.clone(),
+                        first: first.clone(),
+                        second: second.clone(),
+                        branch: LineAngleBisectorBranch::Sum,
+                    },
+                );
+                self.definitions.insert(
+                    second_label,
+                    ObjectDefinition::LineAngleBisector {
+                        group,
+                        peer: first_label,
+                        first,
+                        second,
+                        branch: LineAngleBisectorBranch::Difference,
+                    },
+                );
+                Ok(())
+            }
+            GeoCommand::Remove { label } => self.remove_with_dependents(&label),
         }
     }
 
@@ -217,6 +255,7 @@ impl Construction {
                 | ObjectDefinition::PerpendicularThrough { .. }
                 | ObjectDefinition::PerpendicularBisector { .. }
                 | ObjectDefinition::AngleBisector { .. }
+                | ObjectDefinition::LineAngleBisector { .. }
                 | ObjectDefinition::Segment { .. }
                 | ObjectDefinition::Ray { .. },
             ) => Ok(()),
@@ -253,5 +292,64 @@ impl Construction {
                 label: label.clone(),
             }),
         }
+    }
+
+    fn remove_with_dependents(&mut self, label: &Label) -> Result<(), CommandError> {
+        if !self.definitions.contains_key(label) {
+            return Err(CommandError::UnknownLabel {
+                label: label.clone(),
+            });
+        }
+        let mut removed = std::collections::BTreeSet::from([label.clone()]);
+        loop {
+            let mut changed = false;
+            for (candidate, definition) in &self.definitions {
+                if removed.contains(candidate) {
+                    continue;
+                }
+                let grouped_with_removed = matches!(definition, ObjectDefinition::LineAngleBisector { group, .. } if removed.iter().any(|removed_label| matches!(self.definitions.get(removed_label), Some(ObjectDefinition::LineAngleBisector { group: removed_group, .. }) if group == removed_group)));
+                if grouped_with_removed
+                    || definition_dependencies(definition)
+                        .iter()
+                        .any(|dependency| removed.contains(*dependency))
+                {
+                    removed.insert(candidate.clone());
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        self.definitions
+            .retain(|candidate, _| !removed.contains(candidate));
+        Ok(())
+    }
+}
+
+fn definition_dependencies(definition: &ObjectDefinition) -> Vec<&Label> {
+    match definition {
+        ObjectDefinition::FreePoint(_) | ObjectDefinition::FreeLine(_) => Vec::new(),
+        ObjectDefinition::LineThrough { first, second }
+        | ObjectDefinition::Intersection { first, second }
+        | ObjectDefinition::Segment {
+            start: first,
+            end: second,
+        }
+        | ObjectDefinition::Vector {
+            start: first,
+            end: second,
+        }
+        | ObjectDefinition::Midpoint { first, second }
+        | ObjectDefinition::PerpendicularBisector { first, second }
+        | ObjectDefinition::LineAngleBisector { first, second, .. } => vec![first, second],
+        ObjectDefinition::ParallelThrough { point, line }
+        | ObjectDefinition::PerpendicularThrough { point, line } => vec![point, line],
+        ObjectDefinition::Ray { origin, through } => vec![origin, through],
+        ObjectDefinition::AngleBisector {
+            first,
+            vertex,
+            second,
+        } => vec![first, vertex, second],
     }
 }

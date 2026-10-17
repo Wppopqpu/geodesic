@@ -73,6 +73,7 @@ mod tests {
                 "midpoint",
                 "perpendicular_bisector",
                 "angle_bisector",
+                "line_angle_bisectors",
                 "move",
                 "undo",
                 "redo"
@@ -131,7 +132,7 @@ mod tests {
     fn command_hints_describe_the_expected_arguments() {
         assert_eq!(
             command_hint(":"),
-            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :move | :undo | :redo"
+            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :line_angle_bisectors | :move | :undo | :redo"
         );
         assert_eq!(
             command_hint(":line diagonal"),

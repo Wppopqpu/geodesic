@@ -173,6 +173,18 @@ fn parse_command(
                 second: label(second)?,
             })
         }
+        [
+            "geo::line_angle_bisectors",
+            first_output,
+            second_output,
+            first,
+            second,
+        ] => Ok(GeoCommand::AddLineAngleBisectors {
+            first_label: label(first_output)?,
+            second_label: label(second_output)?,
+            first: label(first)?,
+            second: label(second)?,
+        }),
         _ => Err(ScriptError::Invalid(source.to_owned())),
     }
 }
@@ -226,6 +238,15 @@ fn steel_form(fields: &[&str]) -> Result<String, ScriptError> {
         ] => Ok(format!("({name} \"{object}\" \"{first}\" \"{second}\")")),
         ["geo::angle_bisector", object, first, vertex, second] => Ok(format!(
             "(geo::angle_bisector \"{object}\" \"{first}\" \"{vertex}\" \"{second}\")"
+        )),
+        [
+            "geo::line_angle_bisectors",
+            first_output,
+            second_output,
+            first,
+            second,
+        ] => Ok(format!(
+            "(geo::line_angle_bisectors \"{first_output}\" \"{second_output}\" \"{first}\" \"{second}\")"
         )),
         ["geo::move_line", label, x, y] => {
             let x = parse_number(x, "number")?;

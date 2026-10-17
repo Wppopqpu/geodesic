@@ -395,6 +395,73 @@ fn supporting_lines_accept_segments_and_rays_but_intersections_respect_bounds() 
     }));
 }
 
+#[test]
+fn two_line_angle_bisectors_share_undo_and_delete_as_a_group() {
+    let mut construction = Construction::new();
+    for (name, line) in [
+        (
+            "horizontal",
+            ProjectiveLine::new(0.0.into(), 1.0.into(), 0.0.into()).expect("line"),
+        ),
+        (
+            "vertical",
+            ProjectiveLine::new(1.0.into(), 0.0.into(), 0.0.into()).expect("line"),
+        ),
+    ] {
+        construction
+            .apply(GeoCommand::AddLine {
+                label: label(name),
+                line,
+            })
+            .expect("line");
+    }
+    construction
+        .apply(GeoCommand::AddLineAngleBisectors {
+            first_label: label("bisector_sum"),
+            second_label: label("bisector_difference"),
+            first: label("horizontal"),
+            second: label("vertical"),
+        })
+        .expect("bisectors");
+    let snapshot = construction.evaluate().expect("evaluation");
+    for label_name in ["bisector_sum", "bisector_difference"] {
+        assert!(matches!(
+            snapshot.object(&label(label_name)),
+            Some(GeometricObject::Line(_))
+        ));
+    }
+    construction
+        .apply(GeoCommand::AddPoint {
+            label: label("point_a"),
+            point: ProjectivePoint::real_affine(1.0, 1.0),
+        })
+        .expect("point");
+    construction
+        .apply(GeoCommand::AddParallelThrough {
+            label: label("dependent"),
+            point: label("point_a"),
+            line: label("bisector_sum"),
+        })
+        .expect("dependent");
+    construction
+        .apply(GeoCommand::Remove {
+            label: label("bisector_difference"),
+        })
+        .expect("remove group");
+    let snapshot = construction.evaluate().expect("evaluation");
+    for label_name in ["bisector_sum", "bisector_difference", "dependent"] {
+        assert!(snapshot.object(&label(label_name)).is_none());
+    }
+    construction.undo().expect("undo group removal");
+    assert!(
+        construction
+            .evaluate()
+            .expect("evaluation")
+            .object(&label("dependent"))
+            .is_some()
+    );
+}
+
 fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
     let Some(GeometricObject::Point(point)) = construction
         .evaluate()

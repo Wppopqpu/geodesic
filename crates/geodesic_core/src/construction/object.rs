@@ -27,6 +27,15 @@ pub struct AffineVector {
     pub end: RealAffinePoint,
 }
 
+/// Which output of a two-line angle-bisector construction this label names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineAngleBisectorBranch {
+    /// The normalized signed-distance sum.
+    Sum,
+    /// The normalized signed-distance difference.
+    Difference,
+}
+
 /// A declared construction rule for a geometric object.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObjectDefinition {
@@ -57,6 +66,14 @@ pub enum ObjectDefinition {
         first: Label,
         vertex: Label,
         second: Label,
+    },
+    /// One output of a two-line angle-bisector construction shared by `group`.
+    LineAngleBisector {
+        group: Label,
+        peer: Label,
+        first: Label,
+        second: Label,
+        branch: LineAngleBisectorBranch,
     },
 }
 

@@ -28,6 +28,9 @@ pub enum ProjectiveError {
     /// An affine construction needs a real finite point.
     #[error("construction requires a real finite affine point")]
     NonRealAffinePoint,
+    /// A line construction needs a real affine supporting line.
+    #[error("construction requires a real affine line")]
+    NonRealAffineLine,
     /// A bounded or directional construction needs two distinct points.
     #[error("construction requires distinct affine points")]
     CoincidentAffinePoints,

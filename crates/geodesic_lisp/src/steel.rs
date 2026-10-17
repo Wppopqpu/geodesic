@@ -10,6 +10,7 @@ pub(super) fn validate_with_steel(source: &str) -> Result<(), ScriptError> {
     fn geo_point_complex(_: String, _: f64, _: f64, _: f64, _: f64, _: f64, _: f64) {}
     fn geo_relation(_: String, _: String, _: String) {}
     fn geo_angle_bisector(_: String, _: String, _: String, _: String) {}
+    fn geo_line_angle_bisectors(_: String, _: String, _: String, _: String) {}
     fn geo_move_line(_: String, _: f64, _: f64) {}
     let mut engine = Engine::new();
     engine.register_fn("geo::point", geo_point);
@@ -29,6 +30,7 @@ pub(super) fn validate_with_steel(source: &str) -> Result<(), ScriptError> {
         engine.register_fn(name, geo_relation);
     }
     engine.register_fn("geo::angle_bisector", geo_angle_bisector);
+    engine.register_fn("geo::line_angle_bisectors", geo_line_angle_bisectors);
     engine
         .compile_and_run_raw_program(source.to_owned())
         .map(|_| ())

@@ -97,6 +97,16 @@ pub(crate) fn execute_command(
             },
             "angle bisector",
         ),
+        "line_angle_bisectors" if fields.len() == 5 => apply_relation(
+            construction,
+            GeoCommand::AddLineAngleBisectors {
+                first_label: parse_label(fields[1])?,
+                second_label: parse_label(fields[2])?,
+                first: parse_label(fields[3])?,
+                second: parse_label(fields[4])?,
+            },
+            "line angle bisectors",
+        ),
         "move" if fields.len() == 4 => {
             let label = parse_label(fields[1])?;
             let x = parse_coordinate(fields[2])?;
@@ -139,7 +149,7 @@ pub(crate) fn execute_command(
     }
 }
 
-const COMMAND_NAMES: [&str; 11] = [
+const COMMAND_NAMES: [&str; 12] = [
     "point",
     "line",
     "segment",
@@ -148,6 +158,7 @@ const COMMAND_NAMES: [&str; 11] = [
     "midpoint",
     "perpendicular_bisector",
     "angle_bisector",
+    "line_angle_bisectors",
     "move",
     "undo",
     "redo",
@@ -201,6 +212,7 @@ fn labels_for_position(construction: &Construction, command: &str, position: usi
             | "midpoint"
             | "perpendicular_bisector"
             | "angle_bisector"
+            | "line_angle_bisectors"
                 if position == 1 =>
             {
                 true
@@ -219,6 +231,10 @@ fn labels_for_position(construction: &Construction, command: &str, position: usi
             {
                 matches!(object, GeometricObject::Point(_))
             }
+            "line_angle_bisectors" if position >= 3 => matches!(
+                object,
+                GeometricObject::Line(_) | GeometricObject::Segment(_) | GeometricObject::Ray(_)
+            ),
             _ => false,
         })
         .map(|(label, _)| label.to_string())
@@ -245,7 +261,7 @@ pub(crate) fn command_hint(source: &str) -> &'static str {
         .collect();
     match fields.first().copied() {
         None => {
-            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :move | :undo | :redo"
+            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :line_angle_bisectors | :move | :undo | :redo"
         }
         Some("point") => "usage: :point label x y",
         Some("line") => "usage: :line label point_a point_b",
@@ -255,6 +271,9 @@ pub(crate) fn command_hint(source: &str) -> &'static str {
         Some("midpoint") => "usage: :midpoint label first second",
         Some("perpendicular_bisector") => "usage: :perpendicular_bisector label first second",
         Some("angle_bisector") => "usage: :angle_bisector label first vertex second",
+        Some("line_angle_bisectors") => {
+            "usage: :line_angle_bisectors first_label second_label line_a line_b"
+        }
         Some("move") => "usage: :move free_point_or_line x y",
         Some("undo") => "usage: :undo",
         Some("redo") => "usage: :redo",

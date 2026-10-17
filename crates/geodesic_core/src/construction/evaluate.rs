@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::projective::{
-    angle_bisector, line_through, midpoint, parallel_through, perpendicular_bisector,
-    perpendicular_through, real_affine_point,
+    angle_bisector, line_angle_bisector, line_through, midpoint, parallel_through,
+    perpendicular_bisector, perpendicular_through, real_affine_point,
 };
 use crate::{
     EvaluationError, Label, ProjectiveError, ProjectiveLine, ProjectivePoint, STANDARD_PRECISION,
@@ -151,6 +151,23 @@ impl Construction {
                     self.point_dependency(label, first, objects, undefined)?,
                     self.point_dependency(label, vertex, objects, undefined)?,
                     self.point_dependency(label, second, objects, undefined)?,
+                )
+                .map_err(|source| projective_error(label, source))?,
+            ),
+            ObjectDefinition::LineAngleBisector {
+                first,
+                second,
+                branch,
+                ..
+            } => GeometricObject::Line(
+                line_angle_bisector(
+                    self.supporting_locus_dependency(label, first, objects, undefined)?
+                        .line()
+                        .map_err(|source| projective_error(label, source))?,
+                    self.supporting_locus_dependency(label, second, objects, undefined)?
+                        .line()
+                        .map_err(|source| projective_error(label, source))?,
+                    matches!(branch, super::LineAngleBisectorBranch::Difference),
                 )
                 .map_err(|source| projective_error(label, source))?,
             ),

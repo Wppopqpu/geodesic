@@ -449,7 +449,8 @@ fn drag_target(
             | ObjectDefinition::Vector { .. }
             | ObjectDefinition::Midpoint { .. }
             | ObjectDefinition::PerpendicularBisector { .. }
-            | ObjectDefinition::AngleBisector { .. } => None,
+            | ObjectDefinition::AngleBisector { .. }
+            | ObjectDefinition::LineAngleBisector { .. } => None,
         })
 }
 
@@ -524,7 +525,8 @@ pub(crate) fn point_radius_pixels(
                 | ObjectDefinition::Vector { .. }
                 | ObjectDefinition::Midpoint { .. }
                 | ObjectDefinition::PerpendicularBisector { .. }
-                | ObjectDefinition::AngleBisector { .. } => default_point_radius_pixels(false),
+                | ObjectDefinition::AngleBisector { .. }
+                | ObjectDefinition::LineAngleBisector { .. } => default_point_radius_pixels(false),
             },
         )
 }

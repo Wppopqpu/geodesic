@@ -198,6 +198,12 @@ fn apply_request(
             vertex: json_label(command, "vertex")?,
             second: json_label(command, "second")?,
         },
+        "add_line_angle_bisectors" => geodesic_core::GeoCommand::AddLineAngleBisectors {
+            first_label: json_label(command, "first_label")?,
+            second_label: json_label(command, "second_label")?,
+            first: json_label(command, "first")?,
+            second: json_label(command, "second")?,
+        },
         _ => return Err("unsupported command.op".to_owned()),
     };
     geodesic_io::apply_command(project, command).map_err(|error| error.to_string())

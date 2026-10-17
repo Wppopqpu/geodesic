@@ -78,6 +78,13 @@ pub enum GeoCommand {
         vertex: Label,
         second: Label,
     },
+    /// Adds both angle bisectors of two supporting lines in one undo unit.
+    AddLineAngleBisectors {
+        first_label: Label,
+        second_label: Label,
+        first: Label,
+        second: Label,
+    },
     /// Removes a definition and its evaluated value.
     Remove { label: Label },
 }

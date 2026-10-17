@@ -13,14 +13,14 @@ mod projective;
 
 pub use construction::{
     AffineRay, AffineSegment, AffineVector, Construction, GeoCommand, GeometricObject,
-    GeometrySnapshot, ObjectDefinition,
+    GeometrySnapshot, LineAngleBisectorBranch, ObjectDefinition,
 };
 pub use error::{CommandError, EvaluationError, HistoryError, LabelError, ProjectiveError};
 pub use label::Label;
 pub use projective::{
     ComplexCoordinate, ProjectiveLine, ProjectivePoint, RealAffineLine, RealAffinePoint,
-    Renderability, STANDARD_PRECISION, STANDARD_PRECISION_F32, angle_bisector, midpoint,
-    parallel_through, perpendicular_bisector, perpendicular_through, real_affine_point,
+    Renderability, STANDARD_PRECISION, STANDARD_PRECISION_F32, angle_bisector, line_angle_bisector,
+    midpoint, parallel_through, perpendicular_bisector, perpendicular_through, real_affine_point,
 };
 
 /// Version of the domain kernel.

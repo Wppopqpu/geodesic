@@ -371,6 +371,35 @@ pub fn angle_bisector(
     )
 }
 
+/// Returns one of the two Euclidean angle bisectors of two real affine lines.
+///
+/// `branch` selects the sum (`false`) or difference (`true`) of normalized
+/// signed distances. Parallel lines may yield the projective line at infinity
+/// for one branch, which remains a valid algebraic object but is not rendered.
+///
+/// # Errors
+///
+/// Returns [`ProjectiveError::NonRealAffineLine`] when either supporting line
+/// has no stable real-affine representation.
+pub fn line_angle_bisector(
+    first: ProjectiveLine,
+    second: ProjectiveLine,
+    branch: bool,
+) -> Result<ProjectiveLine, ProjectiveError> {
+    let Renderability::Renderable(first) = first.renderability() else {
+        return Err(ProjectiveError::NonRealAffineLine);
+    };
+    let Renderability::Renderable(second) = second.renderability() else {
+        return Err(ProjectiveError::NonRealAffineLine);
+    };
+    let sign = if branch { -1.0 } else { 1.0 };
+    ProjectiveLine::new(
+        (first.a + sign * second.a).into(),
+        (first.b + sign * second.b).into(),
+        (first.c + sign * second.c).into(),
+    )
+}
+
 fn require_distinct_affine_points(
     first: RealAffinePoint,
     second: RealAffinePoint,

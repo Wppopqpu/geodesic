@@ -56,6 +56,24 @@ fn round_trips_bounded_objects_and_affine_constructions() {
 }
 
 #[test]
+fn round_trips_both_line_angle_bisector_outputs_once() {
+    let source = "(geodesic 1 (line horizontal 0 1 0) (line vertical 1 0 0) (line_angle_bisectors bisector_sum bisector_difference horizontal vertical))";
+    let project = load(source).expect("project");
+    assert_eq!(
+        project
+            .construction
+            .evaluate()
+            .expect("evaluation")
+            .iter()
+            .count(),
+        4
+    );
+    let saved = save(&project);
+    assert_eq!(saved.matches("line_angle_bisectors").count(), 1);
+    assert_eq!(load(&saved).expect("round trip"), project);
+}
+
+#[test]
 fn imports_supported_objects_and_reports_unsupported_ones() {
     let xml = r#"<geogebra><construction><element type="point" label="point_a"><coords x="1" y="2" z="1"/></element><element type="circle" label="circle_a" definition="Circle"/><script/></construction></geogebra>"#;
     let mut bytes = Cursor::new(Vec::new());

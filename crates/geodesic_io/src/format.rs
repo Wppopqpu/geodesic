@@ -166,6 +166,16 @@ fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), Project
             vertex: parse_label(form, 3)?,
             second: parse_label(form, 4)?,
         })?,
+        "line_angle_bisectors" => {
+            project
+                .construction
+                .apply(GeoCommand::AddLineAngleBisectors {
+                    first_label: parse_label(form, 1)?,
+                    second_label: parse_label(form, 2)?,
+                    first: parse_label(form, 3)?,
+                    second: parse_label(form, 4)?,
+                })?;
+        }
         "script" if form.len() == 3 => project.scripts.push(Script {
             event: string(&form[1])?.to_owned(),
             source: string(&form[2])?.to_owned(),
@@ -198,7 +208,8 @@ fn dependencies_written(definition: &ObjectDefinition, written: &BTreeSet<Label>
     match definition {
         ObjectDefinition::FreePoint(_) | ObjectDefinition::FreeLine(_) => true,
         ObjectDefinition::LineThrough { first, second }
-        | ObjectDefinition::Intersection { first, second } => {
+        | ObjectDefinition::Intersection { first, second }
+        | ObjectDefinition::LineAngleBisector { first, second, .. } => {
             written.contains(first) && written.contains(second)
         }
         ObjectDefinition::ParallelThrough { point, line }
@@ -296,6 +307,19 @@ fn write_definition(output: &mut String, label: &Label, definition: &ObjectDefin
                 " (angle_bisector {label} {first} {vertex} {second})"
             );
         }
+        ObjectDefinition::LineAngleBisector {
+            group,
+            peer,
+            first,
+            second,
+            branch,
+        } if group == label && matches!(branch, geodesic_core::LineAngleBisectorBranch::Sum) => {
+            let _ = write!(
+                output,
+                " (line_angle_bisectors {label} {peer} {first} {second})"
+            );
+        }
+        ObjectDefinition::LineAngleBisector { .. } => {}
     }
 }
 
