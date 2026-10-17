@@ -11,7 +11,7 @@ use geodesic_core::{
 
 use crate::path_renderer::{CanvasBatch, CanvasMesh, PathPainter};
 use crate::presentation::bevy_color;
-use crate::state::{DragPreview, DragTarget, GuiState, TOOLBAR_HEIGHT};
+use crate::state::{ActiveTool, DragPreview, DragTarget, GuiState, TOOLBAR_HEIGHT};
 
 /// The initial camera scale maps 0.15 persisted style units to five pixels.
 ///
@@ -80,6 +80,10 @@ pub(crate) fn canvas_input(
 
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
     if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
+        if state.active_tool != ActiveTool::Move {
+            apply_tool_click(&mut state, world, orthographic.scale);
+            return;
+        }
         state.selected = select_canvas_object(&state.project, world, orthographic.scale);
         state.dragging = state
             .selected
@@ -105,6 +109,103 @@ pub(crate) fn canvas_input(
         state.preview = None;
         state.pan_cursor = None;
     }
+}
+
+fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
+    if state.active_tool == ActiveTool::Point {
+        let Some(label) = next_tool_label(&state.project.construction, ActiveTool::Point) else {
+            "error: unable to create an object label".clone_into(&mut state.message);
+            return;
+        };
+        match state.project.construction.apply(GeoCommand::AddPoint {
+            label: label.clone(),
+            point: ProjectivePoint::real_affine(f64::from(world.x), f64::from(world.y)),
+        }) {
+            Ok(()) => {
+                state.selected = Some(label.clone());
+                state.message = format!("created point {label}");
+            }
+            Err(error) => state.message = format!("error: {error}"),
+        }
+        return;
+    }
+    let Some(point) = select_canvas_point(&state.project, world, camera_scale) else {
+        "select a real affine point".clone_into(&mut state.message);
+        return;
+    };
+    if state.tool_inputs.last() != Some(&point) {
+        state.tool_inputs.push(point);
+    }
+    let expected = state.active_tool.input_count();
+    if state.tool_inputs.len() < expected {
+        state.message = format!(
+            "select {} more point(s)",
+            expected - state.tool_inputs.len()
+        );
+        return;
+    }
+    let inputs = std::mem::take(&mut state.tool_inputs);
+    let Some(label) = next_tool_label(&state.project.construction, state.active_tool) else {
+        "error: unable to create an object label".clone_into(&mut state.message);
+        return;
+    };
+    let command = match state.active_tool {
+        ActiveTool::Segment => GeoCommand::AddSegment {
+            label: label.clone(),
+            start: inputs[0].clone(),
+            end: inputs[1].clone(),
+        },
+        ActiveTool::Ray => GeoCommand::AddRay {
+            label: label.clone(),
+            origin: inputs[0].clone(),
+            through: inputs[1].clone(),
+        },
+        ActiveTool::Vector => GeoCommand::AddVector {
+            label: label.clone(),
+            start: inputs[0].clone(),
+            end: inputs[1].clone(),
+        },
+        ActiveTool::Midpoint => GeoCommand::AddMidpoint {
+            label: label.clone(),
+            first: inputs[0].clone(),
+            second: inputs[1].clone(),
+        },
+        ActiveTool::PerpendicularBisector => GeoCommand::AddPerpendicularBisector {
+            label: label.clone(),
+            first: inputs[0].clone(),
+            second: inputs[1].clone(),
+        },
+        ActiveTool::AngleBisector => GeoCommand::AddAngleBisector {
+            label: label.clone(),
+            first: inputs[0].clone(),
+            vertex: inputs[1].clone(),
+            second: inputs[2].clone(),
+        },
+        ActiveTool::Move | ActiveTool::Point => return,
+    };
+    match state.project.construction.apply(command) {
+        Ok(()) => {
+            state.selected = Some(label.clone());
+            state.message = format!(
+                "created {} {label}",
+                state.active_tool.name().to_lowercase()
+            );
+        }
+        Err(error) => state.message = format!("error: {error}"),
+    }
+}
+
+fn next_tool_label(
+    construction: &geodesic_core::Construction,
+    tool: ActiveTool,
+) -> Option<geodesic_core::Label> {
+    (1_u32..).find_map(|index| {
+        let label = geodesic_core::Label::parse(format!("{}_{index}", tool.label_prefix())).ok()?;
+        construction
+            .definitions()
+            .all(|(existing, _)| existing != &label)
+            .then_some(label)
+    })
 }
 
 #[allow(
@@ -133,16 +234,67 @@ fn select_canvas_object(
                 }
                 _ => None,
             },
-            GeometricObject::Line(_) => None,
+            GeometricObject::Line(_)
+            | GeometricObject::Segment(_)
+            | GeometricObject::Ray(_)
+            | GeometricObject::Vector(_) => None,
         })
         .or_else(|| {
             snapshot.iter().find_map(|(label, object)| match object {
                 GeometricObject::Line(line) if line_is_hit(*line, world, camera_scale) => {
                     Some(label.clone())
                 }
-                GeometricObject::Point(_) | GeometricObject::Line(_) => None,
+                GeometricObject::Segment(segment)
+                    if bounded_is_hit(segment.start, segment.end, world, camera_scale) =>
+                {
+                    Some(label.clone())
+                }
+                GeometricObject::Vector(vector)
+                    if bounded_is_hit(vector.start, vector.end, world, camera_scale) =>
+                {
+                    Some(label.clone())
+                }
+                GeometricObject::Ray(ray) if ray_is_hit(ray, world, camera_scale) => {
+                    Some(label.clone())
+                }
+                GeometricObject::Point(_)
+                | GeometricObject::Line(_)
+                | GeometricObject::Segment(_)
+                | GeometricObject::Ray(_)
+                | GeometricObject::Vector(_) => None,
             })
         })
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Canvas hit testing is performed in Bevy's f32 world coordinates."
+)]
+fn select_canvas_point(
+    project: &geodesic_io::Project,
+    world: Vec2,
+    camera_scale: f32,
+) -> Option<geodesic_core::Label> {
+    let snapshot = project.construction.evaluate().ok()?;
+    snapshot.iter().find_map(|(label, object)| match object {
+        GeometricObject::Point(point) => match point.renderability() {
+            geodesic_core::Renderability::Renderable(point)
+                if point_is_hit_radius(
+                    Vec2::new(point.x as f32, point.y as f32),
+                    world,
+                    point_radius_pixels(project, label),
+                    camera_scale,
+                ) =>
+            {
+                Some(label.clone())
+            }
+            _ => None,
+        },
+        GeometricObject::Line(_)
+        | GeometricObject::Segment(_)
+        | GeometricObject::Ray(_)
+        | GeometricObject::Vector(_) => None,
+    })
 }
 
 fn drag_preview(target: &DragTarget, world: Vec2) -> Option<DragPreview> {
@@ -210,7 +362,13 @@ fn drag_target(
             ObjectDefinition::LineThrough { .. }
             | ObjectDefinition::Intersection { .. }
             | ObjectDefinition::ParallelThrough { .. }
-            | ObjectDefinition::PerpendicularThrough { .. } => None,
+            | ObjectDefinition::PerpendicularThrough { .. }
+            | ObjectDefinition::Segment { .. }
+            | ObjectDefinition::Ray { .. }
+            | ObjectDefinition::Vector { .. }
+            | ObjectDefinition::Midpoint { .. }
+            | ObjectDefinition::PerpendicularBisector { .. }
+            | ObjectDefinition::AngleBisector { .. } => None,
         })
 }
 
@@ -279,9 +437,13 @@ pub(crate) fn point_radius_pixels(
                 | ObjectDefinition::LineThrough { .. }
                 | ObjectDefinition::Intersection { .. }
                 | ObjectDefinition::ParallelThrough { .. }
-                | ObjectDefinition::PerpendicularThrough { .. } => {
-                    default_point_radius_pixels(false)
-                }
+                | ObjectDefinition::PerpendicularThrough { .. }
+                | ObjectDefinition::Segment { .. }
+                | ObjectDefinition::Ray { .. }
+                | ObjectDefinition::Vector { .. }
+                | ObjectDefinition::Midpoint { .. }
+                | ObjectDefinition::PerpendicularBisector { .. }
+                | ObjectDefinition::AngleBisector { .. } => default_point_radius_pixels(false),
             },
         )
 }
@@ -300,6 +462,37 @@ pub(crate) fn line_is_hit(line: ProjectiveLine, cursor: Vec2, camera_scale: f32)
     };
     (line.a * f64::from(cursor.x) + line.b * f64::from(cursor.y) + line.c).abs()
         <= f64::from(LINE_SELECTION_RADIUS_PIXELS * camera_scale)
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Canvas hit testing is performed in Bevy's f32 world coordinates."
+)]
+fn bounded_is_hit(
+    start: geodesic_core::RealAffinePoint,
+    end: geodesic_core::RealAffinePoint,
+    cursor: Vec2,
+    camera_scale: f32,
+) -> bool {
+    let start = Vec2::new(start.x as f32, start.y as f32);
+    let end = Vec2::new(end.x as f32, end.y as f32);
+    let direction = end - start;
+    let parameter = (cursor - start).dot(direction) / direction.length_squared();
+    let nearest = start + direction * parameter.clamp(0.0, 1.0);
+    cursor.distance(nearest) <= LINE_SELECTION_RADIUS_PIXELS * camera_scale
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Canvas hit testing is performed in Bevy's f32 world coordinates."
+)]
+fn ray_is_hit(ray: &geodesic_core::AffineRay, cursor: Vec2, camera_scale: f32) -> bool {
+    let origin = Vec2::new(ray.origin.x as f32, ray.origin.y as f32);
+    let through = Vec2::new(ray.through.x as f32, ray.through.y as f32);
+    let direction = through - origin;
+    let parameter = (cursor - origin).dot(direction) / direction.length_squared();
+    let nearest = origin + direction * parameter.max(0.0);
+    cursor.distance(nearest) <= LINE_SELECTION_RADIUS_PIXELS * camera_scale
 }
 
 #[allow(
@@ -479,6 +672,23 @@ fn paint_scene(painter: &mut PathPainter, state: &GuiState, size: Vec2, origin: 
             };
             paint_line(painter, state, label, line, half, origin, scale);
         }
+        if let GeometricObject::Segment(segment) = object {
+            paint_bounded_line(
+                painter,
+                state,
+                label,
+                segment.start,
+                segment.end,
+                origin,
+                scale,
+            );
+        }
+        if let GeometricObject::Ray(ray) = object {
+            paint_ray(painter, state, label, *ray, half, origin, scale);
+        }
+        if let GeometricObject::Vector(vector) = object {
+            paint_vector(painter, state, label, *vector, origin, scale);
+        }
     }
     for (label, object) in snapshot.iter() {
         if let GeometricObject::Point(point) = object {
@@ -492,6 +702,122 @@ fn paint_scene(painter: &mut PathPainter, state: &GuiState, size: Vec2, origin: 
             paint_point(painter, state, label, point, half, origin, scale);
         }
     }
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Viewport-local mesh coordinates use f32."
+)]
+fn affine_to_screen(point: geodesic_core::RealAffinePoint, origin: Vec2, scale: f32) -> Vec2 {
+    Vec2::new(
+        ((point.x - f64::from(origin.x)) / f64::from(scale)) as f32,
+        ((point.y - f64::from(origin.y)) / f64::from(scale)) as f32,
+    )
+}
+
+fn paint_bounded_line(
+    painter: &mut PathPainter,
+    state: &GuiState,
+    label: &geodesic_core::Label,
+    start: geodesic_core::RealAffinePoint,
+    end: geodesic_core::RealAffinePoint,
+    origin: Vec2,
+    scale: f32,
+) {
+    let start = affine_to_screen(start, origin, scale);
+    let end = affine_to_screen(end, origin, scale);
+    let style = geodesic_io::effective_style(&state.project, label);
+    let width = line_width_pixels(style.size);
+    if state.selected.as_ref() == Some(label) {
+        painter.line(
+            start,
+            end,
+            2.0 * width.max(1.0) + 2.0,
+            selected_canvas_color(&style),
+        );
+    }
+    painter.line(start, end, width, canvas_color(&style));
+}
+
+fn paint_ray(
+    painter: &mut PathPainter,
+    state: &GuiState,
+    label: &geodesic_core::Label,
+    ray: geodesic_core::AffineRay,
+    half: Vec2,
+    origin: Vec2,
+    scale: f32,
+) {
+    let start = affine_to_screen(ray.origin, origin, scale);
+    let through = affine_to_screen(ray.through, origin, scale);
+    let Some(end) = clipped_ray(start, through, half) else {
+        return;
+    };
+    paint_bounded_line(
+        painter,
+        state,
+        label,
+        ray.origin,
+        geodesic_core::RealAffinePoint {
+            x: f64::from(end.x.mul_add(scale, origin.x)),
+            y: f64::from(end.y.mul_add(scale, origin.y)),
+        },
+        origin,
+        scale,
+    );
+}
+
+fn paint_vector(
+    painter: &mut PathPainter,
+    state: &GuiState,
+    label: &geodesic_core::Label,
+    vector: geodesic_core::AffineVector,
+    origin: Vec2,
+    scale: f32,
+) {
+    paint_bounded_line(
+        painter,
+        state,
+        label,
+        vector.start,
+        vector.end,
+        origin,
+        scale,
+    );
+    let start = affine_to_screen(vector.start, origin, scale);
+    let end = affine_to_screen(vector.end, origin, scale);
+    let direction = end - start;
+    let Some(unit) = direction.try_normalize() else {
+        return;
+    };
+    let style = geodesic_io::effective_style(&state.project, label);
+    let head = (12.0 + line_width_pixels(style.size) * 2.0).min(direction.length() / 2.0);
+    let base = end - unit * head;
+    let offset = unit.perp() * (head / 2.0);
+    painter.triangle(end, base + offset, base - offset, canvas_color(&style));
+}
+
+fn clipped_ray(origin: Vec2, through: Vec2, half: Vec2) -> Option<Vec2> {
+    let direction = through - origin;
+    let mut parameters = Vec::with_capacity(4);
+    if direction.x.abs() >= geodesic_core::STANDARD_PRECISION_F32 {
+        parameters.extend([-half.x, half.x].into_iter().filter_map(|x| {
+            let parameter = (x - origin.x) / direction.x;
+            let y = origin.y + parameter * direction.y;
+            (parameter >= 0.0 && (-half.y..=half.y).contains(&y)).then_some(parameter)
+        }));
+    }
+    if direction.y.abs() >= geodesic_core::STANDARD_PRECISION_F32 {
+        parameters.extend([-half.y, half.y].into_iter().filter_map(|y| {
+            let parameter = (y - origin.y) / direction.y;
+            let x = origin.x + parameter * direction.x;
+            (parameter >= 0.0 && (-half.x..=half.x).contains(&x)).then_some(parameter)
+        }));
+    }
+    parameters
+        .into_iter()
+        .reduce(f32::max)
+        .map(|parameter| origin + direction * parameter)
 }
 
 #[allow(

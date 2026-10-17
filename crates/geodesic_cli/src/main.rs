@@ -77,6 +77,37 @@ enum Operation {
         point: String,
         line: String,
     },
+    AddSegment {
+        label: String,
+        start: String,
+        end: String,
+    },
+    AddRay {
+        label: String,
+        origin: String,
+        through: String,
+    },
+    AddVector {
+        label: String,
+        start: String,
+        end: String,
+    },
+    AddMidpoint {
+        label: String,
+        first: String,
+        second: String,
+    },
+    AddPerpendicularBisector {
+        label: String,
+        first: String,
+        second: String,
+    },
+    AddAngleBisector {
+        label: String,
+        first: String,
+        vertex: String,
+        second: String,
+    },
     Undo,
     Redo,
 }
@@ -130,6 +161,10 @@ fn main() -> ExitCode {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Clap operations map directly to the shared command boundary."
+)]
 fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> Result<(), String> {
     match operation {
         Operation::AddPoint { label, x, y } => geodesic_io::apply_command(
@@ -214,6 +249,72 @@ fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> 
             },
         )
         .map_err(|error| error.to_string()),
+        Operation::AddSegment { label, start, end } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddSegment {
+                label: parse_label(&label)?,
+                start: parse_label(&start)?,
+                end: parse_label(&end)?,
+            },
+        ),
+        Operation::AddRay {
+            label,
+            origin,
+            through,
+        } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddRay {
+                label: parse_label(&label)?,
+                origin: parse_label(&origin)?,
+                through: parse_label(&through)?,
+            },
+        ),
+        Operation::AddVector { label, start, end } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddVector {
+                label: parse_label(&label)?,
+                start: parse_label(&start)?,
+                end: parse_label(&end)?,
+            },
+        ),
+        Operation::AddMidpoint {
+            label,
+            first,
+            second,
+        } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddMidpoint {
+                label: parse_label(&label)?,
+                first: parse_label(&first)?,
+                second: parse_label(&second)?,
+            },
+        ),
+        Operation::AddPerpendicularBisector {
+            label,
+            first,
+            second,
+        } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddPerpendicularBisector {
+                label: parse_label(&label)?,
+                first: parse_label(&first)?,
+                second: parse_label(&second)?,
+            },
+        ),
+        Operation::AddAngleBisector {
+            label,
+            first,
+            vertex,
+            second,
+        } => apply_relation(
+            project,
+            geodesic_core::GeoCommand::AddAngleBisector {
+                label: parse_label(&label)?,
+                first: parse_label(&first)?,
+                vertex: parse_label(&vertex)?,
+                second: parse_label(&second)?,
+            },
+        ),
         Operation::Undo => project
             .construction
             .undo()
@@ -223,6 +324,13 @@ fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> 
             .redo()
             .map_err(|error| error.to_string()),
     }
+}
+
+fn apply_relation(
+    project: &mut geodesic_io::Project,
+    command: geodesic_core::GeoCommand,
+) -> Result<(), String> {
+    geodesic_io::apply_command(project, command).map_err(|error| error.to_string())
 }
 
 fn move_free_line(
@@ -239,7 +347,12 @@ fn move_free_line(
         .object(&label)
     {
         Some(geodesic_core::GeometricObject::Line(line)) => line,
-        Some(geodesic_core::GeometricObject::Point(_)) => {
+        Some(
+            geodesic_core::GeometricObject::Point(_)
+            | geodesic_core::GeometricObject::Segment(_)
+            | geodesic_core::GeometricObject::Ray(_)
+            | geodesic_core::GeometricObject::Vector(_),
+        ) => {
             return Err(format!("object `{label}` is not a line"));
         }
         None => return Err(format!("object label `{label}` does not exist")),

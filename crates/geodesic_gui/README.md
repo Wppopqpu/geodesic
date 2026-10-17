@@ -27,9 +27,10 @@ general path fill/stroke tessellation. It does not enter the core dependency tre
 ## Appearance and ordering
 
 One reusable mesh asset contains the painter-ordered triangles: grid, axes,
-lines, then points. Selection halos precede their object. Vertex colors retain
-alpha; the material uses alpha blending and the camera uses four-sample MSAA.
-There is no overlap between repeated parallel strokes to darken a wide line.
+infinite lines, bounded straight objects, then points. Selection halos precede
+their object. Vertex colors retain alpha; the material uses alpha blending and
+the camera uses four-sample MSAA. There is no overlap between repeated parallel
+strokes to darken a wide line.
 
 Persisted style sizes retain the existing schema. `0.03` maps to one logical
 pixel of marker radius, or half a logical pixel of line width. Unstyled free
@@ -47,10 +48,19 @@ Behavior references, independently reimplemented from local GeoGebra sources:
 - `DrawConic.java` and desktop/web `GGraphics2D` adapters: separate path fill and
   stroke operations, including Bezier curves and independent hyperbola branches.
 
+Segments, rays, vectors, midpoints, perpendicular bisectors and internal angle
+bisectors form the first bounded-object slice. Segments and vectors are clipped
+by the viewport raster boundary; rays calculate their forward viewport endpoint;
+vectors add a filled arrow head. Their input points must be distinct, real, and
+finite. The toolbar uses a compact typed input state and commits one
+`GeoCommand` after the required point selections; it does not reproduce
+GeoGebra's integer mode system.
+
 Future circle/conic adapters must extract their real locus before building paths;
 real coefficients alone do not guarantee a real locus. They must clip branches
 and supply separate fill and stroke paths so a clipping boundary is never
-stroked as part of a curve. Current public geometry remains points and lines.
+stroked as part of a curve. Labels preserve ASCII case and compare
+case-sensitively; `.ggb` import keeps their original spelling.
 
 ## Verification
 

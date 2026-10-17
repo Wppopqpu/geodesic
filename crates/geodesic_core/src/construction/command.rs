@@ -41,6 +41,43 @@ pub enum GeoCommand {
         point: Label,
         line: Label,
     },
+    /// Adds a segment bounded by two real finite points.
+    AddSegment {
+        label: Label,
+        start: Label,
+        end: Label,
+    },
+    /// Adds a ray starting at one real finite point through another.
+    AddRay {
+        label: Label,
+        origin: Label,
+        through: Label,
+    },
+    /// Adds a vector between two real finite points.
+    AddVector {
+        label: Label,
+        start: Label,
+        end: Label,
+    },
+    /// Adds the midpoint of two real finite points.
+    AddMidpoint {
+        label: Label,
+        first: Label,
+        second: Label,
+    },
+    /// Adds the perpendicular bisector of two real finite points.
+    AddPerpendicularBisector {
+        label: Label,
+        first: Label,
+        second: Label,
+    },
+    /// Adds the internal angle bisector of three real finite points.
+    AddAngleBisector {
+        label: Label,
+        first: Label,
+        vertex: Label,
+        second: Label,
+    },
     /// Removes a definition and its evaluated value.
     Remove { label: Label },
 }

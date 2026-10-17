@@ -154,6 +154,118 @@ fn moves_a_free_line_and_records_the_change() {
     );
 }
 
+#[test]
+fn evaluates_bounded_objects_and_affine_constructions() {
+    let mut construction = Construction::new();
+    for (name, x, y) in [
+        ("point_a", 0.0, 0.0),
+        ("point_b", 4.0, 0.0),
+        ("point_c", 2.0, 2.0),
+    ] {
+        construction
+            .apply(GeoCommand::AddPoint {
+                label: label(name),
+                point: ProjectivePoint::real_affine(x, y),
+            })
+            .expect("point");
+    }
+    for command in [
+        GeoCommand::AddSegment {
+            label: label("segment_ab"),
+            start: label("point_a"),
+            end: label("point_b"),
+        },
+        GeoCommand::AddRay {
+            label: label("ray_ab"),
+            origin: label("point_a"),
+            through: label("point_b"),
+        },
+        GeoCommand::AddVector {
+            label: label("vector_ac"),
+            start: label("point_a"),
+            end: label("point_c"),
+        },
+        GeoCommand::AddMidpoint {
+            label: label("mid_ab"),
+            first: label("point_a"),
+            second: label("point_b"),
+        },
+        GeoCommand::AddPerpendicularBisector {
+            label: label("perp_ab"),
+            first: label("point_a"),
+            second: label("point_b"),
+        },
+        GeoCommand::AddAngleBisector {
+            label: label("angle"),
+            first: label("point_a"),
+            vertex: label("point_c"),
+            second: label("point_b"),
+        },
+    ] {
+        construction.apply(command).expect("construction");
+    }
+    let snapshot = construction.evaluate().expect("evaluation");
+    assert!(
+        matches!(snapshot.object(&label("segment_ab")), Some(GeometricObject::Segment(segment)) if segment.start == crate::RealAffinePoint { x: 0.0, y: 0.0 } && segment.end == crate::RealAffinePoint { x: 4.0, y: 0.0 })
+    );
+    assert!(matches!(
+        snapshot.object(&label("ray_ab")),
+        Some(GeometricObject::Ray(_))
+    ));
+    assert!(matches!(
+        snapshot.object(&label("vector_ac")),
+        Some(GeometricObject::Vector(_))
+    ));
+    assert_eq!(
+        point_at(&construction, "mid_ab").renderability(),
+        crate::Renderability::Renderable(crate::RealAffinePoint { x: 2.0, y: 0.0 })
+    );
+    assert!(
+        line_at(&construction, "perp_ab").is_incident_with(ProjectivePoint::real_affine(2.0, 10.0))
+    );
+    assert!(
+        line_at(&construction, "angle").is_incident_with(ProjectivePoint::real_affine(2.0, 1.0))
+    );
+    construction.undo().expect("undo");
+    assert!(
+        construction
+            .evaluate()
+            .expect("evaluation")
+            .object(&label("angle"))
+            .is_none()
+    );
+}
+
+#[test]
+fn rejects_non_real_points_for_bounded_constructions() {
+    let mut construction = Construction::new();
+    construction
+        .apply(GeoCommand::AddPoint {
+            label: label("complex_point"),
+            point: ProjectivePoint::new(
+                num_complex::Complex64::new(1.0, 1.0),
+                0.0.into(),
+                1.0.into(),
+            )
+            .expect("point"),
+        })
+        .expect("point");
+    construction
+        .apply(GeoCommand::AddPoint {
+            label: label("real_point"),
+            point: ProjectivePoint::real_affine(0.0, 0.0),
+        })
+        .expect("point");
+    assert!(matches!(
+        construction.apply(GeoCommand::AddSegment {
+            label: label("invalid_segment"),
+            start: label("complex_point"),
+            end: label("real_point"),
+        }),
+        Err(crate::CommandError::NotRealAffinePoint { .. })
+    ));
+}
+
 fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
     let Some(GeometricObject::Point(point)) = construction
         .evaluate()

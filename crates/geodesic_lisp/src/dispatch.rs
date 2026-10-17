@@ -36,6 +36,10 @@ pub fn dispatch(
     Ok(applied)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "All restricted script forms are validated in one exhaustive dispatch."
+)]
 fn parse_command(
     fields: &[&str],
     source: &str,
@@ -89,7 +93,12 @@ fn parse_command(
                 .object(&label)
             {
                 Some(geodesic_core::GeometricObject::Line(line)) => line,
-                Some(geodesic_core::GeometricObject::Point(_)) => {
+                Some(
+                    geodesic_core::GeometricObject::Point(_)
+                    | geodesic_core::GeometricObject::Segment(_)
+                    | geodesic_core::GeometricObject::Ray(_)
+                    | geodesic_core::GeometricObject::Vector(_),
+                ) => {
                     return Err(ScriptError::Invalid(format!(
                         "object `{label}` is not a line"
                     )));
@@ -127,6 +136,41 @@ fn parse_command(
                 label: label(object)?,
                 point: label(point)?,
                 line: label(line)?,
+            })
+        }
+        ["geo::segment", object, start, end] => Ok(GeoCommand::AddSegment {
+            label: label(object)?,
+            start: label(start)?,
+            end: label(end)?,
+        }),
+        ["geo::ray", object, origin, through] => Ok(GeoCommand::AddRay {
+            label: label(object)?,
+            origin: label(origin)?,
+            through: label(through)?,
+        }),
+        ["geo::vector", object, start, end] => Ok(GeoCommand::AddVector {
+            label: label(object)?,
+            start: label(start)?,
+            end: label(end)?,
+        }),
+        ["geo::midpoint", object, first, second] => Ok(GeoCommand::AddMidpoint {
+            label: label(object)?,
+            first: label(first)?,
+            second: label(second)?,
+        }),
+        ["geo::perpendicular_bisector", object, first, second] => {
+            Ok(GeoCommand::AddPerpendicularBisector {
+                label: label(object)?,
+                first: label(first)?,
+                second: label(second)?,
+            })
+        }
+        ["geo::angle_bisector", object, first, vertex, second] => {
+            Ok(GeoCommand::AddAngleBisector {
+                label: label(object)?,
+                first: label(first)?,
+                vertex: label(vertex)?,
+                second: label(second)?,
             })
         }
         _ => Err(ScriptError::Invalid(source.to_owned())),
@@ -170,11 +214,19 @@ fn steel_form(fields: &[&str]) -> Result<String, ScriptError> {
             name @ ("geo::line_through"
             | "geo::intersection"
             | "geo::parallel_through"
-            | "geo::perpendicular_through"),
+            | "geo::perpendicular_through"
+            | "geo::segment"
+            | "geo::ray"
+            | "geo::vector"
+            | "geo::midpoint"
+            | "geo::perpendicular_bisector"),
             object,
             first,
             second,
         ] => Ok(format!("({name} \"{object}\" \"{first}\" \"{second}\")")),
+        ["geo::angle_bisector", object, first, vertex, second] => Ok(format!(
+            "(geo::angle_bisector \"{object}\" \"{first}\" \"{vertex}\" \"{second}\")"
+        )),
         ["geo::move_line", label, x, y] => {
             let x = parse_number(x, "number")?;
             let y = parse_number(y, "number")?;

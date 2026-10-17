@@ -13,6 +13,10 @@ use crate::{canvas::draw_canvas, state::GuiState};
 
 #[test]
 #[ignore = "requires a display/GPU; saves a reviewable canvas screenshot"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "One visual fixture intentionally declares every overlapping render case together."
+)]
 fn capture_canvas_paths() {
     let dpi = std::env::var("GEODESIC_TEST_DPI")
         .ok()
@@ -96,6 +100,49 @@ fn capture_canvas_paths() {
                 size,
                 color: color.to_owned(),
                 opacity,
+            },
+        );
+    }
+    for (label, command, color) in [
+        (
+            "segment_demo",
+            GeoCommand::AddSegment {
+                label: Label::parse("segment_demo").expect("label"),
+                start: Label::parse("selected").expect("label"),
+                end: Label::parse("dependent_size").expect("label"),
+            },
+            "#ff9800",
+        ),
+        (
+            "ray_demo",
+            GeoCommand::AddRay {
+                label: Label::parse("ray_demo").expect("label"),
+                origin: Label::parse("dependent_size").expect("label"),
+                through: Label::parse("selected").expect("label"),
+            },
+            "#00695c",
+        ),
+        (
+            "vector_demo",
+            GeoCommand::AddVector {
+                label: Label::parse("vector_demo").expect("label"),
+                start: Label::parse("red").expect("label"),
+                end: Label::parse("dependent_size").expect("label"),
+            },
+            "#6a1b9a",
+        ),
+    ] {
+        state
+            .project
+            .construction
+            .apply(command)
+            .expect("bounded object");
+        state.project.object_styles.insert(
+            Label::parse(label).expect("label"),
+            geodesic_io::ObjectStyle {
+                color: color.to_owned(),
+                size: 0.18,
+                opacity: 1.0,
             },
         );
     }

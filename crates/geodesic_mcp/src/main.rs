@@ -67,6 +67,10 @@ fn dispatch(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "JSON operations map directly to the shared command boundary."
+)]
 fn apply_request(
     params: Option<&serde_json::Value>,
     project: &mut geodesic_io::Project,
@@ -126,7 +130,12 @@ fn apply_request(
                 .object(&label)
             {
                 Some(geodesic_core::GeometricObject::Line(line)) => line,
-                Some(geodesic_core::GeometricObject::Point(_)) => {
+                Some(
+                    geodesic_core::GeometricObject::Point(_)
+                    | geodesic_core::GeometricObject::Segment(_)
+                    | geodesic_core::GeometricObject::Ray(_)
+                    | geodesic_core::GeometricObject::Vector(_),
+                ) => {
                     return Err(format!("object `{label}` is not a line"));
                 }
                 None => return Err(format!("object label `{label}` does not exist")),
@@ -157,6 +166,37 @@ fn apply_request(
             label: json_label(command, "label")?,
             point: json_label(command, "point")?,
             line: json_label(command, "line")?,
+        },
+        "add_segment" => geodesic_core::GeoCommand::AddSegment {
+            label: json_label(command, "label")?,
+            start: json_label(command, "start")?,
+            end: json_label(command, "end")?,
+        },
+        "add_ray" => geodesic_core::GeoCommand::AddRay {
+            label: json_label(command, "label")?,
+            origin: json_label(command, "origin")?,
+            through: json_label(command, "through")?,
+        },
+        "add_vector" => geodesic_core::GeoCommand::AddVector {
+            label: json_label(command, "label")?,
+            start: json_label(command, "start")?,
+            end: json_label(command, "end")?,
+        },
+        "add_midpoint" => geodesic_core::GeoCommand::AddMidpoint {
+            label: json_label(command, "label")?,
+            first: json_label(command, "first")?,
+            second: json_label(command, "second")?,
+        },
+        "add_perpendicular_bisector" => geodesic_core::GeoCommand::AddPerpendicularBisector {
+            label: json_label(command, "label")?,
+            first: json_label(command, "first")?,
+            second: json_label(command, "second")?,
+        },
+        "add_angle_bisector" => geodesic_core::GeoCommand::AddAngleBisector {
+            label: json_label(command, "label")?,
+            first: json_label(command, "first")?,
+            vertex: json_label(command, "vertex")?,
+            second: json_label(command, "second")?,
         },
         _ => return Err("unsupported command.op".to_owned()),
     };

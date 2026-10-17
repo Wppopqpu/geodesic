@@ -6,8 +6,10 @@ pub enum LabelError {
     /// Labels cannot be empty.
     #[error("label must not be empty")]
     Empty,
-    /// Labels use ASCII `snake_case` so they are stable in scripts and CLI input.
-    #[error("label `{value}` must use lowercase ASCII snake_case")]
+    /// Labels use a portable ASCII identifier grammar in scripts and CLI input.
+    #[error(
+        "label `{value}` must start with an ASCII letter and use only ASCII letters, digits, or underscores"
+    )]
     Invalid { value: String },
 }
 
@@ -23,6 +25,15 @@ pub enum ProjectiveError {
     /// Two lines do not have a unique intersection point.
     #[error("lines do not have a unique projective intersection")]
     NonUniqueIntersection,
+    /// An affine construction needs a real finite point.
+    #[error("construction requires a real finite affine point")]
+    NonRealAffinePoint,
+    /// A bounded or directional construction needs two distinct points.
+    #[error("construction requires distinct affine points")]
+    CoincidentAffinePoints,
+    /// An angle bisector is undefined for a straight or zero angle.
+    #[error("construction requires a non-straight affine angle")]
+    DegenerateAffineAngle,
 }
 
 /// Failure while applying a command to a construction.
@@ -40,6 +51,9 @@ pub enum CommandError {
         label: Label,
         expected: &'static str,
     },
+    /// A bounded real-affine construction references a non-renderable point.
+    #[error("object `{label}` must be a real finite point for this construction")]
+    NotRealAffinePoint { label: Label },
 }
 
 /// Failure while evaluating a construction definition.

@@ -4,6 +4,10 @@ use geodesic_core::{
 
 use crate::state::MAX_COMPLETIONS;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The command bar keeps its small public grammar in one exhaustive dispatch."
+)]
 pub(crate) fn execute_command(
     construction: &mut Construction,
     source: &str,
@@ -38,6 +42,61 @@ pub(crate) fn execute_command(
                 .map_err(|error| error.to_string())?;
             Ok(format!("created line {label}"))
         }
+        "segment" if fields.len() == 4 => apply_relation(
+            construction,
+            GeoCommand::AddSegment {
+                label: parse_label(fields[1])?,
+                start: parse_label(fields[2])?,
+                end: parse_label(fields[3])?,
+            },
+            "segment",
+        ),
+        "ray" if fields.len() == 4 => apply_relation(
+            construction,
+            GeoCommand::AddRay {
+                label: parse_label(fields[1])?,
+                origin: parse_label(fields[2])?,
+                through: parse_label(fields[3])?,
+            },
+            "ray",
+        ),
+        "vector" if fields.len() == 4 => apply_relation(
+            construction,
+            GeoCommand::AddVector {
+                label: parse_label(fields[1])?,
+                start: parse_label(fields[2])?,
+                end: parse_label(fields[3])?,
+            },
+            "vector",
+        ),
+        "midpoint" if fields.len() == 4 => apply_relation(
+            construction,
+            GeoCommand::AddMidpoint {
+                label: parse_label(fields[1])?,
+                first: parse_label(fields[2])?,
+                second: parse_label(fields[3])?,
+            },
+            "midpoint",
+        ),
+        "perpendicular_bisector" if fields.len() == 4 => apply_relation(
+            construction,
+            GeoCommand::AddPerpendicularBisector {
+                label: parse_label(fields[1])?,
+                first: parse_label(fields[2])?,
+                second: parse_label(fields[3])?,
+            },
+            "perpendicular bisector",
+        ),
+        "angle_bisector" if fields.len() == 5 => apply_relation(
+            construction,
+            GeoCommand::AddAngleBisector {
+                label: parse_label(fields[1])?,
+                first: parse_label(fields[2])?,
+                vertex: parse_label(fields[3])?,
+                second: parse_label(fields[4])?,
+            },
+            "angle bisector",
+        ),
         "move" if fields.len() == 4 => {
             let label = parse_label(fields[1])?;
             let x = parse_coordinate(fields[2])?;
@@ -57,6 +116,11 @@ pub(crate) fn execute_command(
                     line: parallel_through(ProjectivePoint::real_affine(x, y), line)
                         .map_err(|error| error.to_string())?,
                 },
+                GeometricObject::Segment(_)
+                | GeometricObject::Ray(_)
+                | GeometricObject::Vector(_) => {
+                    return Err("only free points and lines can be moved".to_owned());
+                }
             };
             construction
                 .apply(command)
@@ -75,7 +139,19 @@ pub(crate) fn execute_command(
     }
 }
 
-const COMMAND_NAMES: [&str; 5] = ["point", "line", "move", "undo", "redo"];
+const COMMAND_NAMES: [&str; 11] = [
+    "point",
+    "line",
+    "segment",
+    "ray",
+    "vector",
+    "midpoint",
+    "perpendicular_bisector",
+    "angle_bisector",
+    "move",
+    "undo",
+    "redo",
+];
 
 pub(crate) fn command_completions(construction: &Construction, source: &str) -> Vec<String> {
     let trimmed = source.trim_start();
@@ -117,11 +193,32 @@ fn labels_for_position(construction: &Construction, command: &str, position: usi
     snapshot
         .iter()
         .filter(|(_, object)| match command {
-            "point" | "line" if position == 1 => true,
+            "point"
+            | "line"
+            | "segment"
+            | "ray"
+            | "vector"
+            | "midpoint"
+            | "perpendicular_bisector"
+            | "angle_bisector"
+                if position == 1 =>
+            {
+                true
+            }
             "move" if position == 1 => {
                 matches!(object, GeometricObject::Point(_) | GeometricObject::Line(_))
             }
-            "line" if position >= 2 => matches!(object, GeometricObject::Point(_)),
+            "line"
+            | "segment"
+            | "ray"
+            | "vector"
+            | "midpoint"
+            | "perpendicular_bisector"
+            | "angle_bisector"
+                if position >= 2 =>
+            {
+                matches!(object, GeometricObject::Point(_))
+            }
             _ => false,
         })
         .map(|(label, _)| label.to_string())
@@ -148,15 +245,32 @@ pub(crate) fn command_hint(source: &str) -> &'static str {
         .collect();
     match fields.first().copied() {
         None => {
-            "commands: :point label x y | :line label point_a point_b | :move label x y | :undo | :redo"
+            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :move | :undo | :redo"
         }
         Some("point") => "usage: :point label x y",
         Some("line") => "usage: :line label point_a point_b",
+        Some("segment") => "usage: :segment label start end",
+        Some("ray") => "usage: :ray label origin through",
+        Some("vector") => "usage: :vector label start end",
+        Some("midpoint") => "usage: :midpoint label first second",
+        Some("perpendicular_bisector") => "usage: :perpendicular_bisector label first second",
+        Some("angle_bisector") => "usage: :angle_bisector label first vertex second",
         Some("move") => "usage: :move free_point_or_line x y",
         Some("undo") => "usage: :undo",
         Some("redo") => "usage: :redo",
-        Some(_) => "unknown command; use :point, :line, :move, :undo, or :redo",
+        Some(_) => "unknown command; use a geometry command or :move, :undo, :redo",
     }
+}
+
+fn apply_relation(
+    construction: &mut Construction,
+    command: GeoCommand,
+    description: &str,
+) -> Result<String, String> {
+    construction
+        .apply(command)
+        .map(|()| format!("created {description}"))
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn history_previous(

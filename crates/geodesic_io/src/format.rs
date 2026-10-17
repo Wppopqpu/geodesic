@@ -70,6 +70,10 @@ pub fn load(source: &str) -> Result<Project, ProjectError> {
     Ok(project)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The versioned data grammar is deliberately kept in one exhaustive dispatch."
+)]
 fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), ProjectError> {
     match symbol(&form[0])? {
         "point" => project.construction.apply(GeoCommand::AddPoint {
@@ -127,6 +131,41 @@ fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), Project
                     line: parse_label(form, 3)?,
                 })?;
         }
+        "segment" => project.construction.apply(GeoCommand::AddSegment {
+            label: parse_label(form, 1)?,
+            start: parse_label(form, 2)?,
+            end: parse_label(form, 3)?,
+        })?,
+        "ray" => project.construction.apply(GeoCommand::AddRay {
+            label: parse_label(form, 1)?,
+            origin: parse_label(form, 2)?,
+            through: parse_label(form, 3)?,
+        })?,
+        "vector" => project.construction.apply(GeoCommand::AddVector {
+            label: parse_label(form, 1)?,
+            start: parse_label(form, 2)?,
+            end: parse_label(form, 3)?,
+        })?,
+        "midpoint" => project.construction.apply(GeoCommand::AddMidpoint {
+            label: parse_label(form, 1)?,
+            first: parse_label(form, 2)?,
+            second: parse_label(form, 3)?,
+        })?,
+        "perpendicular_bisector" => {
+            project
+                .construction
+                .apply(GeoCommand::AddPerpendicularBisector {
+                    label: parse_label(form, 1)?,
+                    first: parse_label(form, 2)?,
+                    second: parse_label(form, 3)?,
+                })?;
+        }
+        "angle_bisector" => project.construction.apply(GeoCommand::AddAngleBisector {
+            label: parse_label(form, 1)?,
+            first: parse_label(form, 2)?,
+            vertex: parse_label(form, 3)?,
+            second: parse_label(form, 4)?,
+        })?,
         "script" if form.len() == 3 => project.scripts.push(Script {
             event: string(&form[1])?.to_owned(),
             source: string(&form[2])?.to_owned(),
@@ -166,6 +205,24 @@ fn dependencies_written(definition: &ObjectDefinition, written: &BTreeSet<Label>
         | ObjectDefinition::PerpendicularThrough { point, line } => {
             written.contains(point) && written.contains(line)
         }
+        ObjectDefinition::Segment { start, end }
+        | ObjectDefinition::Vector { start, end }
+        | ObjectDefinition::Midpoint {
+            first: start,
+            second: end,
+        }
+        | ObjectDefinition::PerpendicularBisector {
+            first: start,
+            second: end,
+        } => written.contains(start) && written.contains(end),
+        ObjectDefinition::Ray { origin, through } => {
+            written.contains(origin) && written.contains(through)
+        }
+        ObjectDefinition::AngleBisector {
+            first,
+            vertex,
+            second,
+        } => written.contains(first) && written.contains(vertex) && written.contains(second),
     }
 }
 
@@ -213,6 +270,31 @@ fn write_definition(output: &mut String, label: &Label, definition: &ObjectDefin
         }
         ObjectDefinition::PerpendicularThrough { point, line } => {
             let _ = write!(output, " (perpendicular_through {label} {point} {line})");
+        }
+        ObjectDefinition::Segment { start, end } => {
+            let _ = write!(output, " (segment {label} {start} {end})");
+        }
+        ObjectDefinition::Ray { origin, through } => {
+            let _ = write!(output, " (ray {label} {origin} {through})");
+        }
+        ObjectDefinition::Vector { start, end } => {
+            let _ = write!(output, " (vector {label} {start} {end})");
+        }
+        ObjectDefinition::Midpoint { first, second } => {
+            let _ = write!(output, " (midpoint {label} {first} {second})");
+        }
+        ObjectDefinition::PerpendicularBisector { first, second } => {
+            let _ = write!(output, " (perpendicular_bisector {label} {first} {second})");
+        }
+        ObjectDefinition::AngleBisector {
+            first,
+            vertex,
+            second,
+        } => {
+            let _ = write!(
+                output,
+                " (angle_bisector {label} {first} {vertex} {second})"
+            );
         }
     }
 }

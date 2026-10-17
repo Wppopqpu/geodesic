@@ -53,9 +53,110 @@ fn render_with_styles(snapshot: &GeometrySnapshot, project: Option<&Project>) ->
                 -y1, -y2, style.color, style.size, style.opacity
             );
         }
+        if let GeometricObject::Segment(segment) = object {
+            write_bounded_line(&mut svg, label, segment.start, segment.end, project);
+        }
+        if let GeometricObject::Ray(ray) = object
+            && let Some(end) = clipped_ray_endpoint(ray.origin, ray.through)
+        {
+            write_bounded_line(&mut svg, label, ray.origin, end, project);
+        }
+        if let GeometricObject::Vector(vector) = object {
+            write_bounded_line(&mut svg, label, vector.start, vector.end, project);
+            write_vector_head(&mut svg, label, vector.start, vector.end, project);
+        }
     }
     svg.push_str("</svg>");
     svg
+}
+
+fn style_for(project: Option<&Project>, label: &geodesic_core::Label) -> ObjectStyle {
+    project.map_or(
+        ObjectStyle {
+            color: "#212121".to_owned(),
+            size: 0.05,
+            opacity: 1.0,
+        },
+        |project| geodesic_io::effective_style(project, label),
+    )
+}
+
+fn write_bounded_line(
+    svg: &mut String,
+    label: &geodesic_core::Label,
+    start: geodesic_core::RealAffinePoint,
+    end: geodesic_core::RealAffinePoint,
+    project: Option<&Project>,
+) {
+    let style = style_for(project, label);
+    let _ = write!(
+        svg,
+        "<line id=\"{label}\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\"/>",
+        start.x, -start.y, end.x, -end.y, style.color, style.size, style.opacity
+    );
+}
+
+fn write_vector_head(
+    svg: &mut String,
+    label: &geodesic_core::Label,
+    start: geodesic_core::RealAffinePoint,
+    end: geodesic_core::RealAffinePoint,
+    project: Option<&Project>,
+) {
+    let length = start.distance_to(end);
+    if length <= STANDARD_PRECISION {
+        return;
+    }
+    let style = style_for(project, label);
+    let head = (style.size * 6.0).min(length / 2.0);
+    let dx = (end.x - start.x) / length;
+    let dy = (end.y - start.y) / length;
+    let base_x = end.x - dx * head;
+    let base_y = end.y - dy * head;
+    let offset_x = -dy * head / 2.0;
+    let offset_y = dx * head / 2.0;
+    let _ = write!(
+        svg,
+        "<polygon id=\"{label}_head\" points=\"{},{} {},{} {},{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+        end.x,
+        -end.y,
+        base_x + offset_x,
+        -(base_y + offset_y),
+        base_x - offset_x,
+        -(base_y - offset_y),
+        style.color,
+        style.opacity
+    );
+}
+
+fn clipped_ray_endpoint(
+    origin: geodesic_core::RealAffinePoint,
+    through: geodesic_core::RealAffinePoint,
+) -> Option<geodesic_core::RealAffinePoint> {
+    let dx = through.x - origin.x;
+    let dy = through.y - origin.y;
+    let mut parameters = Vec::with_capacity(4);
+    if dx.abs() >= STANDARD_PRECISION {
+        parameters.extend([-10.0, 10.0].into_iter().filter_map(|x| {
+            let parameter = (x - origin.x) / dx;
+            let y = origin.y + parameter * dy;
+            (parameter >= 0.0 && (-10.0..=10.0).contains(&y)).then_some(parameter)
+        }));
+    }
+    if dy.abs() >= STANDARD_PRECISION {
+        parameters.extend([-10.0, 10.0].into_iter().filter_map(|y| {
+            let parameter = (y - origin.y) / dy;
+            let x = origin.x + parameter * dx;
+            (parameter >= 0.0 && (-10.0..=10.0).contains(&x)).then_some(parameter)
+        }));
+    }
+    parameters
+        .into_iter()
+        .reduce(f64::max)
+        .map(|parameter| geodesic_core::RealAffinePoint {
+            x: origin.x + parameter * dx,
+            y: origin.y + parameter * dy,
+        })
 }
 
 fn clipped_line(a: f64, b: f64, c: f64) -> Option<((f64, f64), (f64, f64))> {
@@ -154,6 +255,18 @@ mod tests {
         assert!(svg.contains("id=\"phase_real\""));
         for hidden in ["complex_line", "uncertain_line", "infinite_line"] {
             assert!(!svg.contains(hidden));
+        }
+    }
+
+    #[test]
+    fn renders_bounded_lines_and_a_vector_head() {
+        let project = geodesic_io::load(
+            "(geodesic 1 (point point_a 0 0) (point point_b 2 0) (segment segment_ab point_a point_b) (ray ray_ab point_a point_b) (vector vector_ab point_a point_b))",
+        )
+        .expect("project");
+        let svg = super::render_project(&project).expect("svg");
+        for id in ["segment_ab", "ray_ab", "vector_ab", "vector_ab_head"] {
+            assert!(svg.contains(&format!("id=\"{id}\"")), "missing {id}");
         }
     }
 

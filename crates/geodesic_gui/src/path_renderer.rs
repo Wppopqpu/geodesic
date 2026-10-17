@@ -100,6 +100,15 @@ impl PathPainter {
         self.stroke_path(&builder.build(), width, color);
     }
 
+    pub(crate) fn triangle(&mut self, first: Vec2, second: Vec2, third: Vec2, color: Color) {
+        let mut builder = Path::builder();
+        builder.begin(point(first.x, first.y));
+        builder.line_to(point(second.x, second.y));
+        builder.line_to(point(third.x, third.y));
+        builder.close();
+        self.fill_path(&builder.build(), color);
+    }
+
     pub(crate) fn mesh(&self) -> Mesh {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,

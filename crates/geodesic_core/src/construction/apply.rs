@@ -49,6 +49,10 @@ impl Construction {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "All command variants share one atomic history boundary."
+    )]
     fn apply_without_history(&mut self, command: GeoCommand) -> Result<(), CommandError> {
         match command {
             GeoCommand::AddPoint { label, point } => {
@@ -110,6 +114,64 @@ impl Construction {
                     ObjectDefinition::PerpendicularThrough { point, line },
                 )
             }
+            GeoCommand::AddSegment { label, start, end } => {
+                self.require_real_affine_point(&start)?;
+                self.require_real_affine_point(&end)?;
+                self.insert(label, ObjectDefinition::Segment { start, end })
+            }
+            GeoCommand::AddRay {
+                label,
+                origin,
+                through,
+            } => {
+                self.require_real_affine_point(&origin)?;
+                self.require_real_affine_point(&through)?;
+                self.insert(label, ObjectDefinition::Ray { origin, through })
+            }
+            GeoCommand::AddVector { label, start, end } => {
+                self.require_real_affine_point(&start)?;
+                self.require_real_affine_point(&end)?;
+                self.insert(label, ObjectDefinition::Vector { start, end })
+            }
+            GeoCommand::AddMidpoint {
+                label,
+                first,
+                second,
+            } => {
+                self.require_real_affine_point(&first)?;
+                self.require_real_affine_point(&second)?;
+                self.insert(label, ObjectDefinition::Midpoint { first, second })
+            }
+            GeoCommand::AddPerpendicularBisector {
+                label,
+                first,
+                second,
+            } => {
+                self.require_real_affine_point(&first)?;
+                self.require_real_affine_point(&second)?;
+                self.insert(
+                    label,
+                    ObjectDefinition::PerpendicularBisector { first, second },
+                )
+            }
+            GeoCommand::AddAngleBisector {
+                label,
+                first,
+                vertex,
+                second,
+            } => {
+                self.require_real_affine_point(&first)?;
+                self.require_real_affine_point(&vertex)?;
+                self.require_real_affine_point(&second)?;
+                self.insert(
+                    label,
+                    ObjectDefinition::AngleBisector {
+                        first,
+                        vertex,
+                        second,
+                    },
+                )
+            }
             GeoCommand::Remove { label } => self
                 .definitions
                 .remove(&label)
@@ -131,7 +193,11 @@ impl Construction {
 
     fn require_point(&self, label: &Label) -> Result<(), CommandError> {
         match self.definitions.get(label) {
-            Some(ObjectDefinition::FreePoint(_) | ObjectDefinition::Intersection { .. }) => Ok(()),
+            Some(
+                ObjectDefinition::FreePoint(_)
+                | ObjectDefinition::Intersection { .. }
+                | ObjectDefinition::Midpoint { .. },
+            ) => Ok(()),
             Some(_) => Err(CommandError::WrongObjectKind {
                 label: label.clone(),
                 expected: "point",
@@ -148,13 +214,36 @@ impl Construction {
                 ObjectDefinition::FreeLine(_)
                 | ObjectDefinition::LineThrough { .. }
                 | ObjectDefinition::ParallelThrough { .. }
-                | ObjectDefinition::PerpendicularThrough { .. },
+                | ObjectDefinition::PerpendicularThrough { .. }
+                | ObjectDefinition::PerpendicularBisector { .. }
+                | ObjectDefinition::AngleBisector { .. },
             ) => Ok(()),
             Some(_) => Err(CommandError::WrongObjectKind {
                 label: label.clone(),
                 expected: "line",
             }),
             None => Err(CommandError::UnknownLabel {
+                label: label.clone(),
+            }),
+        }
+    }
+
+    fn require_real_affine_point(&self, label: &Label) -> Result<(), CommandError> {
+        self.require_point(label)?;
+        let point = self
+            .evaluate()
+            .ok()
+            .and_then(|snapshot| snapshot.object(label))
+            .and_then(|object| match object {
+                super::GeometricObject::Point(point) => Some(point),
+                super::GeometricObject::Line(_)
+                | super::GeometricObject::Segment(_)
+                | super::GeometricObject::Ray(_)
+                | super::GeometricObject::Vector(_) => None,
+            });
+        match point.and_then(|point| crate::real_affine_point(point).ok()) {
+            Some(_) => Ok(()),
+            None => Err(CommandError::NotRealAffinePoint {
                 label: label.clone(),
             }),
         }

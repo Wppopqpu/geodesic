@@ -47,12 +47,15 @@ errors.
 | --- | --- |
 | `Project` | The complete persisted geometric document: construction, document settings, canvas settings, style presets, and scripts. |
 | `GeometricObject` | A named object in a `Project`, such as a point or a line. |
-| `Label` | The unique, user-visible `snake_case` identifier of a `GeometricObject`. A label is its canonical public identity. |
+| `Label` | The unique, user-visible ASCII identifier of a `GeometricObject`. A label preserves case and is its canonical public identity. |
 | `Construction` | The ordered dependency graph and command history which derive dependent objects from inputs. |
 | `FreeObject` | A geometric object created from literal input and independently movable when its domain permits it. |
 | `DependentObject` | A geometric object derived from other objects or expressions. |
 | `ProjectivePoint` | A point represented internally by homogeneous coordinates. |
 | `ProjectiveLine` | A line represented by homogeneous coefficients and evaluated through projective incidence. |
+| `AffineSegment` | A closed bounded straight locus between two distinct real finite `ProjectivePoint` values. |
+| `AffineRay` | A one-sided straight locus starting at one real finite `ProjectivePoint` and passing through another. |
+| `AffineVector` | A directed real-affine displacement represented by distinct start and end points. |
 | `RealAffineChart` | The initial renderable chart of the real locus, displayed as ordinary 2D Euclidean coordinates. |
 | `ComplexObject` | A valid object over complex coordinates which is not renderable in the real affine chart. |
 | `StylePreset` | A named reusable set of point or line visual properties stored in the project. |
@@ -122,7 +125,8 @@ and broad Classic 6 tool parity are explicitly later milestones.
 - Reject duplicate labels and invalid renames.
 - Use Rust-like public naming everywhere:
   - types and enum variants: `PascalCase`;
-  - functions, fields, labels, commands, and Steel primitives: `snake_case`;
+  - functions, fields, commands, and Steel primitives: `snake_case`;
+  - labels: ASCII letters, digits, and underscores; preserve user-provided case;
   - CLI subcommands: `kebab-case`.
 - Prefer explicit namespaces in Steel, for example
   `(geo::line_through point_a point_b)`.

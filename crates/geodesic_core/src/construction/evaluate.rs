@@ -1,9 +1,17 @@
 use std::collections::BTreeMap;
 
-use crate::projective::{line_through, parallel_through, perpendicular_through};
-use crate::{EvaluationError, Label, ProjectiveError, ProjectiveLine, ProjectivePoint};
+use crate::projective::{
+    angle_bisector, line_through, midpoint, parallel_through, perpendicular_bisector,
+    perpendicular_through, real_affine_point,
+};
+use crate::{
+    EvaluationError, Label, ProjectiveError, ProjectiveLine, ProjectivePoint, STANDARD_PRECISION,
+};
 
-use super::{Construction, GeometricObject, GeometrySnapshot, ObjectDefinition};
+use super::{
+    AffineRay, AffineSegment, AffineVector, Construction, GeometricObject, GeometrySnapshot,
+    ObjectDefinition,
+};
 
 impl Construction {
     /// Evaluates all construction definitions into an immutable snapshot.
@@ -65,6 +73,44 @@ impl Construction {
                 )
                 .map_err(|source| projective_error(label, source))?,
             ),
+            ObjectDefinition::Segment { start, end } => {
+                let (start, end) = self.affine_pair(label, start, end, objects)?;
+                GeometricObject::Segment(AffineSegment { start, end })
+            }
+            ObjectDefinition::Ray { origin, through } => {
+                let (origin, through) = self.affine_pair(label, origin, through, objects)?;
+                GeometricObject::Ray(AffineRay { origin, through })
+            }
+            ObjectDefinition::Vector { start, end } => {
+                let (start, end) = self.affine_pair(label, start, end, objects)?;
+                GeometricObject::Vector(AffineVector { start, end })
+            }
+            ObjectDefinition::Midpoint { first, second } => GeometricObject::Point(
+                midpoint(
+                    self.point_dependency(label, first, objects)?,
+                    self.point_dependency(label, second, objects)?,
+                )
+                .map_err(|source| projective_error(label, source))?,
+            ),
+            ObjectDefinition::PerpendicularBisector { first, second } => GeometricObject::Line(
+                perpendicular_bisector(
+                    self.point_dependency(label, first, objects)?,
+                    self.point_dependency(label, second, objects)?,
+                )
+                .map_err(|source| projective_error(label, source))?,
+            ),
+            ObjectDefinition::AngleBisector {
+                first,
+                vertex,
+                second,
+            } => GeometricObject::Line(
+                angle_bisector(
+                    self.point_dependency(label, first, objects)?,
+                    self.point_dependency(label, vertex, objects)?,
+                    self.point_dependency(label, second, objects)?,
+                )
+                .map_err(|source| projective_error(label, source))?,
+            ),
         };
         objects.insert(label.clone(), object);
         Ok(object)
@@ -78,7 +124,10 @@ impl Construction {
     ) -> Result<ProjectivePoint, EvaluationError> {
         match self.evaluate_label(dependency, objects)? {
             GeometricObject::Point(point) => Ok(point),
-            GeometricObject::Line(_) => Err(EvaluationError::WrongDependencyKind {
+            GeometricObject::Line(_)
+            | GeometricObject::Segment(_)
+            | GeometricObject::Ray(_)
+            | GeometricObject::Vector(_) => Err(EvaluationError::WrongDependencyKind {
                 label: label.clone(),
                 dependency: dependency.clone(),
                 expected: "point",
@@ -94,12 +143,35 @@ impl Construction {
     ) -> Result<ProjectiveLine, EvaluationError> {
         match self.evaluate_label(dependency, objects)? {
             GeometricObject::Line(line) => Ok(line),
-            GeometricObject::Point(_) => Err(EvaluationError::WrongDependencyKind {
+            GeometricObject::Point(_)
+            | GeometricObject::Segment(_)
+            | GeometricObject::Ray(_)
+            | GeometricObject::Vector(_) => Err(EvaluationError::WrongDependencyKind {
                 label: label.clone(),
                 dependency: dependency.clone(),
                 expected: "line",
             }),
         }
+    }
+
+    fn affine_pair(
+        &self,
+        label: &Label,
+        first: &Label,
+        second: &Label,
+        objects: &mut BTreeMap<Label, GeometricObject>,
+    ) -> Result<(crate::RealAffinePoint, crate::RealAffinePoint), EvaluationError> {
+        let first = real_affine_point(self.point_dependency(label, first, objects)?)
+            .map_err(|source| projective_error(label, source))?;
+        let second = real_affine_point(self.point_dependency(label, second, objects)?)
+            .map_err(|source| projective_error(label, source))?;
+        if first.distance_to(second) <= STANDARD_PRECISION {
+            return Err(projective_error(
+                label,
+                ProjectiveError::CoincidentAffinePoints,
+            ));
+        }
+        Ok((first, second))
     }
 }
 

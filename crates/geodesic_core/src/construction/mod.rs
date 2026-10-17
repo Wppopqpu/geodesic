@@ -9,7 +9,7 @@ mod tests;
 use std::collections::BTreeMap;
 
 pub use command::GeoCommand;
-pub use object::{GeometricObject, ObjectDefinition};
+pub use object::{AffineRay, AffineSegment, AffineVector, GeometricObject, ObjectDefinition};
 
 use crate::Label;
 

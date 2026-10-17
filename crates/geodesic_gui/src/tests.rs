@@ -55,11 +55,26 @@ mod tests {
     #[test]
     fn completes_command_names_from_the_current_token() {
         let construction = Construction::new();
-        assert_eq!(command_completions(&construction, ":p"), vec!["point"]);
+        assert_eq!(
+            command_completions(&construction, ":p"),
+            vec!["point", "perpendicular_bisector"]
+        );
         assert_eq!(command_completions(&construction, ":un"), vec!["undo"]);
         assert_eq!(
             command_completions(&construction, ":"),
-            vec!["point", "line", "move", "undo", "redo"]
+            vec![
+                "point",
+                "line",
+                "segment",
+                "ray",
+                "vector",
+                "midpoint",
+                "perpendicular_bisector",
+                "angle_bisector",
+                "move",
+                "undo",
+                "redo"
+            ]
         );
     }
 
@@ -111,7 +126,7 @@ mod tests {
     fn command_hints_describe_the_expected_arguments() {
         assert_eq!(
             command_hint(":"),
-            "commands: :point label x y | :line label point_a point_b | :move label x y | :undo | :redo"
+            "commands: :point | :line | :segment | :ray | :vector | :midpoint | :perpendicular_bisector | :angle_bisector | :move | :undo | :redo"
         );
         assert_eq!(
             command_hint(":line diagonal"),
@@ -119,7 +134,33 @@ mod tests {
         );
         assert_eq!(
             command_hint(":unknown"),
-            "unknown command; use :point, :line, :move, :undo, or :redo"
+            "unknown command; use a geometry command or :move, :undo, :redo"
+        );
+    }
+
+    #[test]
+    fn ex_commands_create_bounded_objects_and_affine_constructions() {
+        let mut construction = Construction::new();
+        for command in [
+            ":point point_a 0 0",
+            ":point point_b 4 0",
+            ":point point_c 2 2",
+        ] {
+            execute_command(&mut construction, command).expect("point");
+        }
+        for command in [
+            ":segment segment_ab point_a point_b",
+            ":ray ray_ab point_a point_b",
+            ":vector vector_ac point_a point_c",
+            ":midpoint midpoint_ab point_a point_b",
+            ":perpendicular_bisector perp_ab point_a point_b",
+            ":angle_bisector angle_acb point_a point_c point_b",
+        ] {
+            execute_command(&mut construction, command).expect("construction");
+        }
+        assert_eq!(
+            construction.evaluate().expect("evaluation").iter().count(),
+            9
         );
     }
 

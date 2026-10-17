@@ -35,6 +35,20 @@ pub struct RealAffinePoint {
     pub y: f64,
 }
 
+impl RealAffinePoint {
+    /// Returns the Euclidean distance to another affine point.
+    #[must_use]
+    pub fn distance_to(self, other: Self) -> f64 {
+        (self.x - other.x).hypot(self.y - other.y)
+    }
+
+    /// Converts this value to a finite projective point.
+    #[must_use]
+    pub fn projective(self) -> ProjectivePoint {
+        ProjectivePoint::real_affine(self.x, self.y)
+    }
+}
+
 /// Real line coefficients with a unit-length affine normal.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RealAffineLine {
@@ -121,6 +135,23 @@ impl ProjectivePoint {
             Renderability::AtInfinity => Renderability::AtInfinity,
             Renderability::NumericallyUncertain => Renderability::NumericallyUncertain,
         }
+    }
+}
+
+/// Extracts a real finite affine point for a bounded construction.
+///
+/// The original complex projective value remains unchanged.
+///
+/// # Errors
+///
+/// Returns [`ProjectiveError::NonRealAffinePoint`] if the point is non-real,
+/// at infinity, or numerically uncertain in the initial real affine chart.
+pub fn real_affine_point(point: ProjectivePoint) -> Result<RealAffinePoint, ProjectiveError> {
+    match point.renderability() {
+        Renderability::Renderable(point) => Ok(point),
+        Renderability::AtInfinity
+        | Renderability::NonReal
+        | Renderability::NumericallyUncertain => Err(ProjectiveError::NonRealAffinePoint),
     }
 }
 
@@ -260,6 +291,93 @@ pub fn perpendicular_through(
         -coefficient_y * coordinate_x + coefficient_x * coordinate_y,
     )
     .map_err(|_| ProjectiveError::NonUniqueIntersection)
+}
+
+/// Returns the midpoint between two distinct real finite points.
+///
+/// # Errors
+///
+/// Returns [`ProjectiveError::NonRealAffinePoint`] or
+/// [`ProjectiveError::CoincidentAffinePoints`] when no bounded midpoint exists.
+pub fn midpoint(
+    first: ProjectivePoint,
+    second: ProjectivePoint,
+) -> Result<ProjectivePoint, ProjectiveError> {
+    let first = real_affine_point(first)?;
+    let second = real_affine_point(second)?;
+    require_distinct_affine_points(first, second)?;
+    Ok(ProjectivePoint::real_affine(
+        first.x.midpoint(second.x),
+        first.y.midpoint(second.y),
+    ))
+}
+
+/// Returns the real-affine perpendicular bisector of two distinct points.
+///
+/// # Errors
+///
+/// Returns [`ProjectiveError::NonRealAffinePoint`] or
+/// [`ProjectiveError::CoincidentAffinePoints`] when the construction is undefined.
+pub fn perpendicular_bisector(
+    first: ProjectivePoint,
+    second: ProjectivePoint,
+) -> Result<ProjectiveLine, ProjectiveError> {
+    let first = real_affine_point(first)?;
+    let second = real_affine_point(second)?;
+    require_distinct_affine_points(first, second)?;
+    let midpoint = RealAffinePoint {
+        x: first.x.midpoint(second.x),
+        y: first.y.midpoint(second.y),
+    };
+    let a = second.x - first.x;
+    let b = second.y - first.y;
+    ProjectiveLine::new(
+        a.into(),
+        b.into(),
+        (-(a * midpoint.x + b * midpoint.y)).into(),
+    )
+}
+
+/// Returns the internal angle bisector of `first`-`vertex`-`second`.
+///
+/// # Errors
+///
+/// Returns [`ProjectiveError::DegenerateAffineAngle`] for a zero or straight
+/// angle, or [`ProjectiveError::NonRealAffinePoint`] outside the real chart.
+pub fn angle_bisector(
+    first: ProjectivePoint,
+    vertex: ProjectivePoint,
+    second: ProjectivePoint,
+) -> Result<ProjectiveLine, ProjectiveError> {
+    let first = real_affine_point(first)?;
+    let vertex = real_affine_point(vertex)?;
+    let second = real_affine_point(second)?;
+    let first_length = first.distance_to(vertex);
+    let second_length = second.distance_to(vertex);
+    if first_length <= STANDARD_PRECISION || second_length <= STANDARD_PRECISION {
+        return Err(ProjectiveError::DegenerateAffineAngle);
+    }
+    let direction_x = (first.x - vertex.x) / first_length + (second.x - vertex.x) / second_length;
+    let direction_y = (first.y - vertex.y) / first_length + (second.y - vertex.y) / second_length;
+    if direction_x.hypot(direction_y) <= STANDARD_PRECISION {
+        return Err(ProjectiveError::DegenerateAffineAngle);
+    }
+    let normal_x = -direction_y;
+    let normal_y = direction_x;
+    ProjectiveLine::new(
+        normal_x.into(),
+        normal_y.into(),
+        (-(normal_x * vertex.x + normal_y * vertex.y)).into(),
+    )
+}
+
+fn require_distinct_affine_points(
+    first: RealAffinePoint,
+    second: RealAffinePoint,
+) -> Result<(), ProjectiveError> {
+    (first.distance_to(second) > STANDARD_PRECISION)
+        .then_some(())
+        .ok_or(ProjectiveError::CoincidentAffinePoints)
 }
 
 fn cross_product(

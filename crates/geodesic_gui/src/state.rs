@@ -28,6 +28,8 @@ pub(crate) struct GuiState {
     pub(crate) preview: Option<DragPreview>,
     pub(crate) pan_cursor: Option<Vec2>,
     pub(crate) bottom_ui_height: f32,
+    pub(crate) active_tool: ActiveTool,
+    pub(crate) tool_inputs: Vec<Label>,
 }
 
 #[derive(Clone)]
@@ -46,6 +48,78 @@ pub(crate) enum DragPreview {
         label: Label,
         line: ProjectiveLine,
     },
+}
+
+/// A compact construction-tool state. Each completed tool submits one `GeoCommand`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ActiveTool {
+    /// Select and move free objects.
+    #[default]
+    Move,
+    /// Create a free point at the cursor.
+    Point,
+    /// Select two points to create a segment.
+    Segment,
+    /// Select an origin and a direction point.
+    Ray,
+    /// Select a tail and a head point.
+    Vector,
+    /// Select two points to create their midpoint.
+    Midpoint,
+    /// Select two points to create their perpendicular bisector.
+    PerpendicularBisector,
+    /// Select three points in first-vertex-second order.
+    AngleBisector,
+}
+
+impl ActiveTool {
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Move,
+        Self::Point,
+        Self::Segment,
+        Self::Ray,
+        Self::Vector,
+        Self::Midpoint,
+        Self::PerpendicularBisector,
+        Self::AngleBisector,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Move => "Move",
+            Self::Point => "Point",
+            Self::Segment => "Segment",
+            Self::Ray => "Ray",
+            Self::Vector => "Vector",
+            Self::Midpoint => "Midpoint",
+            Self::PerpendicularBisector => "Perp bisector",
+            Self::AngleBisector => "Angle bisector",
+        }
+    }
+
+    pub(crate) const fn input_count(self) -> usize {
+        match self {
+            Self::Move | Self::Point => 0,
+            Self::Segment
+            | Self::Ray
+            | Self::Vector
+            | Self::Midpoint
+            | Self::PerpendicularBisector => 2,
+            Self::AngleBisector => 3,
+        }
+    }
+
+    pub(crate) const fn label_prefix(self) -> &'static str {
+        match self {
+            Self::Move | Self::Point => "point",
+            Self::Segment => "segment",
+            Self::Ray => "ray",
+            Self::Vector => "vector",
+            Self::Midpoint => "midpoint",
+            Self::PerpendicularBisector => "perpendicular_bisector",
+            Self::AngleBisector => "angle_bisector",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

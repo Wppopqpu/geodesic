@@ -11,8 +11,8 @@ use crate::{
         apply_theme, draw_axis_labels, egui_color, hex_color, submit_command, wrapped_text_height,
     },
     state::{
-        COMMAND_BAR_HEIGHT, COMPLETION_ROW_HEIGHT, GuiState, MESSAGE_BAR_VERTICAL_PADDING,
-        TOOLBAR_HEIGHT, UiTheme,
+        ActiveTool, COMMAND_BAR_HEIGHT, COMPLETION_ROW_HEIGHT, GuiState,
+        MESSAGE_BAR_VERTICAL_PADDING, TOOLBAR_HEIGHT, UiTheme,
     },
 };
 
@@ -64,6 +64,25 @@ pub(crate) fn application_chrome(
                 ui.heading("Geodesic");
                 ui.label("Real affine canvas · complex projective kernel");
                 ui.separator();
+                for tool in ActiveTool::ALL {
+                    if ui
+                        .selectable_label(state.active_tool == tool, tool.name())
+                        .clicked()
+                    {
+                        state.active_tool = tool;
+                        state.tool_inputs.clear();
+                        state.message = match tool.input_count() {
+                            0 if tool == ActiveTool::Point => {
+                                "click the canvas to create a point".to_owned()
+                            }
+                            0 => "select and drag free objects".to_owned(),
+                            count => {
+                                format!("select {count} points for {}", tool.name().to_lowercase())
+                            }
+                        };
+                    }
+                }
+                ui.separator();
                 ui.label("Theme:");
                 for (theme, name) in [
                     (UiTheme::System, "System"),
@@ -95,6 +114,9 @@ pub(crate) fn application_chrome(
                             geodesic_core::GeometricObject::Line(line) => {
                                 renderability_hint(line.renderability())
                             }
+                            geodesic_core::GeometricObject::Segment(_)
+                            | geodesic_core::GeometricObject::Ray(_)
+                            | geodesic_core::GeometricObject::Vector(_) => None,
                         };
                         if let Some(hint) = hint {
                             ui.small(hint);
