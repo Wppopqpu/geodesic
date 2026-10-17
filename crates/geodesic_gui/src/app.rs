@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_egui::EguiPlugin;
+use bevy_egui::{EguiPlugin, EguiPrimaryContextPass, EguiStartupSet};
 
 use crate::canvas::{canvas_input, draw_canvas};
 use crate::chrome::application_chrome;
@@ -9,13 +9,18 @@ pub(crate) fn run() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.97, 0.97, 0.98)))
         .insert_resource(GuiState::default())
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            file_path: "../../assets".into(),
+            ..default()
+        }))
         .add_plugins(EguiPlugin::default())
-        .add_systems(Startup, setup)
         .add_systems(
-            Update,
-            (application_chrome, canvas_input, draw_canvas).chain(),
+            PreStartup,
+            setup_camera.before(EguiStartupSet::InitContexts),
         )
+        .add_systems(Startup, setup_ui_resources)
+        .add_systems(Update, (canvas_input, draw_canvas).chain())
+        .add_systems(EguiPrimaryContextPass, application_chrome)
         .run();
 }
 
@@ -23,9 +28,7 @@ pub(crate) fn run() {
     clippy::needless_pass_by_value,
     reason = "Bevy systems receive resource wrappers by value."
 )]
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut state: ResMut<GuiState>) {
-    state.algebra_width = SIDE_PANEL_WIDTH;
-    state.style_width = SIDE_PANEL_WIDTH;
+fn setup_camera(mut commands: Commands) {
     let mut projection = OrthographicProjection::default_2d();
     projection.scale = 0.02;
     commands.spawn((
@@ -33,6 +36,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut state: ResM
         Msaa::Sample4,
         Projection::Orthographic(projection),
     ));
+}
+
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Bevy systems receive resource wrappers by value."
+)]
+fn setup_ui_resources(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut state: ResMut<GuiState>,
+) {
+    state.algebra_width = SIDE_PANEL_WIDTH;
+    state.style_width = SIDE_PANEL_WIDTH;
     commands.insert_resource(ToolbarIcons {
         move_tool: asset_server.load("geogebra-toolbar/mode_move.png"),
         point: asset_server.load("geogebra-toolbar/mode_point.png"),
