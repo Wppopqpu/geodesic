@@ -175,3 +175,14 @@ fn persists_complete_point_and_line_appearance() {
     assert_eq!(style.line_pattern, crate::LinePattern::Dashed);
     assert_eq!(load(&save(&project)).expect("round trip"), project);
 }
+
+#[test]
+fn rejects_missing_and_cyclic_style_fallbacks() {
+    for source in [
+        "(geodesic 1 (point point_a 0 0) (style_use point_a missing))",
+        "(geodesic 1 (style_preset_use first second) (style_preset_use second first))",
+    ] {
+        let error = load(source).expect_err("invalid fallback graph");
+        assert!(error.to_string().contains("style"));
+    }
+}

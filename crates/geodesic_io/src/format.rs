@@ -66,6 +66,7 @@ pub fn load(source: &str) -> Result<Project, ProjectError> {
     for form in &root[2..] {
         load_form(&mut project, list(form, "project form")?.as_slice())?;
     }
+    crate::style::validate_style_references(&project)?;
     Ok(project)
 }
 
