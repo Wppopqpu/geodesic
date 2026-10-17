@@ -84,18 +84,37 @@ fn pan_and_zoom(
     clippy::needless_pass_by_value,
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
     reason = "Bevy system parameters are owned wrappers and its 2D renderer uses f32."
 )]
-fn draw_canvas(mut gizmos: Gizmos, state: Res<GuiState>) {
-    for coordinate in -10..=10 {
-        let value = coordinate as f32;
+fn draw_canvas(
+    mut gizmos: Gizmos,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Transform, &Projection), With<Camera2d>>,
+    state: Res<GuiState>,
+) {
+    let Some((left, right, bottom, top)) = visible_world_bounds(&windows, &camera) else {
+        return;
+    };
+
+    let step = grid_step(left, right, bottom, top);
+    let first_x = (left / step).floor() * step;
+    let first_y = (bottom / step).floor() * step;
+    let x_count = (((right - first_x) / step).ceil().max(0.0) as usize) + 1;
+    let y_count = (((top - first_y) / step).ceil().max(0.0) as usize) + 1;
+    for index in 0..x_count {
+        let value = first_x + index as f32 * step;
         let grid = Color::srgb(0.88, 0.88, 0.9);
-        gizmos.line_2d(Vec2::new(value, -10.0), Vec2::new(value, 10.0), grid);
-        gizmos.line_2d(Vec2::new(-10.0, value), Vec2::new(10.0, value), grid);
+        gizmos.line_2d(Vec2::new(value, bottom), Vec2::new(value, top), grid);
+    }
+    for index in 0..y_count {
+        let value = first_y + index as f32 * step;
+        let grid = Color::srgb(0.88, 0.88, 0.9);
+        gizmos.line_2d(Vec2::new(left, value), Vec2::new(right, value), grid);
     }
     let axis = Color::srgb(0.35, 0.35, 0.4);
-    gizmos.line_2d(Vec2::new(-10.0, 0.0), Vec2::new(10.0, 0.0), axis);
-    gizmos.line_2d(Vec2::new(0.0, -10.0), Vec2::new(0.0, 10.0), axis);
+    gizmos.line_2d(Vec2::new(left, 0.0), Vec2::new(right, 0.0), axis);
+    gizmos.line_2d(Vec2::new(0.0, bottom), Vec2::new(0.0, top), axis);
     if let Ok(snapshot) = state.project.construction.evaluate() {
         for (label, object) in snapshot.iter() {
             if let geodesic_core::GeometricObject::Point(point) = object
@@ -135,6 +154,32 @@ fn draw_canvas(mut gizmos: Gizmos, state: Res<GuiState>) {
             }
         }
     }
+}
+
+fn visible_world_bounds(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    camera: &Query<(&Transform, &Projection), With<Camera2d>>,
+) -> Option<(f32, f32, f32, f32)> {
+    let window = windows.single().ok()?;
+    let (transform, projection) = camera.single().ok()?;
+    let Projection::Orthographic(orthographic) = projection else {
+        return None;
+    };
+    let half_width = window.width() * orthographic.scale / 2.0;
+    let half_height = window.height() * orthographic.scale / 2.0;
+    Some((
+        transform.translation.x - half_width,
+        transform.translation.x + half_width,
+        transform.translation.y - half_height,
+        transform.translation.y + half_height,
+    ))
+}
+
+/// Keeps a zoomed-out canvas responsive while retaining unit grid lines at normal zoom.
+fn grid_step(left: f32, right: f32, bottom: f32, top: f32) -> f32 {
+    const MAX_GRID_LINES_PER_AXIS: f32 = 2_000.0;
+    let span = (right - left).max(top - bottom);
+    (span / MAX_GRID_LINES_PER_AXIS).ceil().max(1.0)
 }
 
 fn clipped_line(a: f32, b: f32, c: f32) -> Option<(Vec2, Vec2)> {
@@ -232,8 +277,14 @@ fn select_and_drag(
     }
 }
 
-fn application_chrome(mut contexts: EguiContexts, mut state: ResMut<GuiState>) {
+fn application_chrome(
+    mut contexts: EguiContexts,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Transform, &Projection), With<Camera2d>>,
+    mut state: ResMut<GuiState>,
+) {
     let context = contexts.ctx_mut();
+    draw_axis_labels(context, &windows, &camera);
     egui::TopBottomPanel::top("toolbar").show(context, |ui| {
         ui.horizontal(|ui| {
             ui.heading("Geodesic");
@@ -327,6 +378,85 @@ fn application_chrome(mut contexts: EguiContexts, mut state: ResMut<GuiState>) {
             }
         });
     });
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Axis labels use the f32 coordinates of the Bevy canvas."
+)]
+fn draw_axis_labels(
+    context: &egui::Context,
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    camera: &Query<(&Transform, &Projection), With<Camera2d>>,
+) {
+    let Some((left, right, bottom, top)) = visible_world_bounds(windows, camera) else {
+        return;
+    };
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok((transform, Projection::Orthographic(orthographic))) = camera.single() else {
+        return;
+    };
+    let grid_step = grid_step(left, right, bottom, top);
+    let label_step = (24.0 * orthographic.scale).ceil().max(grid_step);
+    let first_x = (left / label_step).ceil() * label_step;
+    let first_y = (bottom / label_step).ceil() * label_step;
+    let axis_color = egui::Color32::from_rgb(85, 85, 95);
+
+    for index in 0..=((right - first_x) / label_step).floor().max(0.0) as usize {
+        let value = first_x + index as f32 * label_step;
+        if value.abs() < grid_step * 0.5 {
+            continue;
+        }
+        let screen_x =
+            window.width() / 2.0 + (value - transform.translation.x) / orthographic.scale;
+        let screen_y = window.height() / 2.0 - transform.translation.y / orthographic.scale;
+        axis_label(
+            context,
+            egui::pos2(screen_x + 3.0, screen_y + 3.0),
+            value,
+            axis_color,
+            "x",
+        );
+    }
+    for index in 0..=((top - first_y) / label_step).floor().max(0.0) as usize {
+        let value = first_y + index as f32 * label_step;
+        if value.abs() < grid_step * 0.5 {
+            continue;
+        }
+        let screen_x = window.width() / 2.0 + 3.0;
+        let screen_y =
+            window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
+        axis_label(
+            context,
+            egui::pos2(screen_x, screen_y - 8.0),
+            value,
+            axis_color,
+            "y",
+        );
+    }
+}
+
+fn axis_label(
+    context: &egui::Context,
+    position: egui::Pos2,
+    value: f32,
+    color: egui::Color32,
+    axis: &str,
+) {
+    egui::Area::new(egui::Id::new(("axis_label", axis, value.to_bits())))
+        .fixed_pos(position)
+        .interactable(false)
+        .show(context, |ui| {
+            ui.label(
+                egui::RichText::new(format!("{value:.0}"))
+                    .size(11.0)
+                    .color(color),
+            );
+        });
 }
 
 fn apply_theme(context: &egui::Context, theme: UiTheme) {
