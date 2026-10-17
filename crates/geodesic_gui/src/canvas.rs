@@ -3,10 +3,18 @@ use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     window::PrimaryWindow,
 };
-use geodesic_core::{GeoCommand, GeometricObject, ProjectivePoint};
+use geodesic_core::{GeoCommand, GeometricObject, ObjectDefinition, ProjectivePoint};
 
 use crate::presentation::bevy_color;
 use crate::state::{GuiState, TOOLBAR_HEIGHT};
+
+/// The initial camera scale makes one style unit equal to 50 screen pixels.
+///
+/// Point styles remain persisted in project/SVG units, while the canvas adapts
+/// their world-space radius to keep their on-screen radius constant as the
+/// camera zooms.
+const STYLE_UNITS_PER_PIXEL_AT_DEFAULT_SCALE: f32 = 0.02;
+const POINT_SELECTION_RADIUS_PIXELS: f32 = 15.0;
 
 #[allow(
     clippy::needless_pass_by_value,
@@ -27,7 +35,8 @@ pub(crate) fn canvas_input(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if !canvas_contains(cursor, window, &state) {
+    let cursor_is_on_canvas = canvas_contains(cursor, window, &state);
+    if !cursor_is_on_canvas && state.dragging.is_none() && state.pan_cursor.is_none() {
         state.dragging = None;
         state.preview = None;
         state.pan_cursor = None;
@@ -39,16 +48,18 @@ pub(crate) fn canvas_input(
     let Projection::Orthographic(orthographic) = projection.as_mut() else {
         return;
     };
-    let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-    for event in mouse_wheel.read() {
-        let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
-            continue;
-        };
-        orthographic.scale = next_scale;
-        let after = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-        let correction = anchor - after;
-        transform.translation.x += correction.x;
-        transform.translation.y += correction.y;
+    if cursor_is_on_canvas {
+        let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+        for event in mouse_wheel.read() {
+            let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
+                continue;
+            };
+            orthographic.scale = next_scale;
+            let after = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+            let correction = anchor - after;
+            transform.translation.x += correction.x;
+            transform.translation.y += correction.y;
+        }
     }
     if mouse_buttons.pressed(MouseButton::Middle) {
         for event in mouse_motion.read() {
@@ -58,7 +69,7 @@ pub(crate) fn canvas_input(
     }
 
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-    if mouse_buttons.just_pressed(MouseButton::Left) {
+    if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
         state.selected = state
             .project
             .construction
@@ -68,8 +79,12 @@ pub(crate) fn canvas_input(
                 snapshot.iter().find_map(|(label, object)| match object {
                     GeometricObject::Point(point) => match point.renderability() {
                         geodesic_core::Renderability::Renderable(point)
-                            if Vec2::new(point.x as f32, point.y as f32).distance(world)
-                                <= 0.3 * orthographic.scale =>
+                            if point_is_hit(
+                                Vec2::new(point.x as f32, point.y as f32),
+                                world,
+                                geodesic_io::effective_style(&state.project, label).size,
+                                orthographic.scale,
+                            ) =>
                         {
                             Some(label.clone())
                         }
@@ -78,8 +93,12 @@ pub(crate) fn canvas_input(
                     GeometricObject::Line(_) => None,
                 })
             });
-        state.dragging = state.selected.clone();
-        state.pan_cursor = (state.dragging.is_none()).then_some(cursor);
+        state.dragging = state
+            .selected
+            .as_ref()
+            .filter(|label| is_free_point(&state.project.construction, label))
+            .cloned();
+        state.pan_cursor = (state.selected.is_none()).then_some(cursor);
     }
     if mouse_buttons.pressed(MouseButton::Left) {
         if let Some(label) = &state.dragging {
@@ -95,7 +114,8 @@ pub(crate) fn canvas_input(
         }
     }
     if mouse_buttons.just_released(MouseButton::Left) {
-        if let Some((label, point)) = state.preview.take() {
+        if let Some(label) = state.dragging.take() {
+            let point = ProjectivePoint::real_affine(f64::from(world.x), f64::from(world.y));
             state.message = state
                 .project
                 .construction
@@ -105,9 +125,31 @@ pub(crate) fn canvas_input(
                     |()| "moved selected point".to_owned(),
                 );
         }
-        state.dragging = None;
+        state.preview = None;
         state.pan_cursor = None;
     }
+}
+
+fn is_free_point(construction: &geodesic_core::Construction, label: &geodesic_core::Label) -> bool {
+    construction.definitions().any(|(candidate, definition)| {
+        candidate == label && matches!(definition, ObjectDefinition::FreePoint(_))
+    })
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Bevy's 2D renderer uses f32 coordinates."
+)]
+pub(crate) fn point_radius_world(style_size: f64, camera_scale: f32) -> f32 {
+    style_size as f32 * camera_scale / STYLE_UNITS_PER_PIXEL_AT_DEFAULT_SCALE
+}
+
+pub(crate) fn point_selection_radius_world(style_size: f64, camera_scale: f32) -> f32 {
+    point_radius_world(style_size, camera_scale).max(POINT_SELECTION_RADIUS_PIXELS * camera_scale)
+}
+
+pub(crate) fn point_is_hit(point: Vec2, cursor: Vec2, style_size: f64, camera_scale: f32) -> bool {
+    point.distance(cursor) <= point_selection_radius_world(style_size, camera_scale)
 }
 
 pub(crate) fn canvas_contains(cursor: Vec2, window: &Window, state: &GuiState) -> bool {
@@ -198,7 +240,7 @@ pub(crate) fn draw_canvas(
                 };
                 gizmos.circle_2d(
                     Vec2::new(point.x as f32, point.y as f32),
-                    style.size as f32,
+                    point_radius_world(style.size, scale),
                     color,
                 );
             }

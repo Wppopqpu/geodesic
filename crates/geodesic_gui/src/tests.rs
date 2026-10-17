@@ -163,6 +163,36 @@ mod tests {
     }
 
     #[test]
+    fn point_radius_is_constant_in_screen_pixels_across_zoom_levels() {
+        let style_size = 0.15;
+        let zoomed_out = crate::point_radius_world(style_size, 0.01);
+        let zoomed_in = crate::point_radius_world(style_size, 0.04);
+
+        assert!((zoomed_out / 0.01 - 7.5).abs() < 1e-5);
+        assert!((zoomed_in / 0.04 - 7.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn point_hit_target_has_a_zoom_independent_minimum_radius() {
+        let point = bevy::prelude::Vec2::ZERO;
+        for scale in [0.01, 0.04] {
+            assert!(crate::point_is_hit(
+                point,
+                bevy::prelude::Vec2::new(15.0 * scale, 0.0),
+                0.15,
+                scale,
+            ));
+            assert!(!crate::point_is_hit(
+                point,
+                bevy::prelude::Vec2::new(15.1 * scale, 0.0),
+                0.15,
+                scale,
+            ));
+            assert!((crate::point_selection_radius_world(0.15, scale) / scale - 15.0).abs() < 1e-5);
+        }
+    }
+
+    #[test]
     fn formats_editor_colors_as_persistable_hex() {
         assert_eq!(rgb("#1565c0"), [21, 101, 192]);
         assert_eq!(

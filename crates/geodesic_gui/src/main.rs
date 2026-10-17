@@ -13,7 +13,10 @@ mod state;
 mod gui_tests;
 
 #[cfg(test)]
-pub(crate) use canvas::{canvas_contains, clipped_line, grid_step, next_zoom_scale};
+pub(crate) use canvas::{
+    canvas_contains, clipped_line, grid_step, next_zoom_scale, point_is_hit, point_radius_world,
+    point_selection_radius_world,
+};
 #[cfg(test)]
 pub(crate) use command::{
     command_completions, command_hint, execute_command, history_next, history_previous,
