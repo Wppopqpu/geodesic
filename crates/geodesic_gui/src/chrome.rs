@@ -25,6 +25,16 @@ const TOOL_STACKS: [&[ActiveTool]; 4] = [
     &[ActiveTool::Segment, ActiveTool::Ray, ActiveTool::Vector],
     &[ActiveTool::PerpendicularBisector, ActiveTool::AngleBisector],
 ];
+const TOOLBAR_SCROLL_STEP: f32 = 180.0;
+const TOOLBAR_SCROLL_BUTTON_WIDTH: f32 = 28.0;
+
+fn toolbar_scroll_limit(content_width: f32, viewport_width: f32) -> f32 {
+    (content_width - viewport_width).max(0.0)
+}
+
+fn shifted_toolbar_offset(offset: f32, delta: f32, limit: f32) -> f32 {
+    (offset + delta).clamp(0.0, limit)
+}
 
 struct ToolbarIconIds {
     move_tool: egui::TextureId,
@@ -115,6 +125,32 @@ fn tool_stack(
     }
 }
 
+fn toolbar_contents(
+    ui: &mut egui::Ui,
+    state: &mut GuiState,
+    icons: &ToolbarIconIds,
+    context: &egui::Context,
+) {
+    for tools in TOOL_STACKS {
+        tool_stack(ui, state, icons, tools);
+        ui.separator();
+    }
+    ui.label("Theme:");
+    for (theme, name) in [
+        (UiTheme::System, "System"),
+        (UiTheme::Light, "Light"),
+        (UiTheme::Dark, "Dark"),
+    ] {
+        if ui.selectable_label(state.theme == theme, name).clicked() {
+            state.theme = theme;
+            apply_theme(context, theme);
+        }
+    }
+    ui.separator();
+    ui.small("© International GeoGebra Institute · CC BY-NC-SA 4.0");
+    ui.hyperlink_to("Made with GeoGebra®", "https://www.geogebra.org/");
+}
+
 fn renderability_hint<T: Copy>(
     classification: geodesic_core::Renderability<T>,
 ) -> Option<&'static str> {
@@ -170,24 +206,75 @@ pub(crate) fn application_chrome(
         .exact_size(TOOLBAR_HEIGHT)
         .show(&mut viewport_ui, |ui| {
             ui.horizontal(|ui| {
-                for tools in TOOL_STACKS {
-                    tool_stack(ui, state.as_mut(), &toolbar_icon_ids, tools);
-                    ui.separator();
+                if state.toolbar_overflows
+                    && ui
+                        .add_enabled(state.toolbar_scroll_offset > 0.0, egui::Button::new("◀"))
+                        .clicked()
+                {
+                    state.toolbar_scroll_offset = shifted_toolbar_offset(
+                        state.toolbar_scroll_offset,
+                        -TOOLBAR_SCROLL_STEP,
+                        f32::INFINITY,
+                    );
                 }
-                ui.label("Theme:");
-                for (theme, name) in [
-                    (UiTheme::System, "System"),
-                    (UiTheme::Light, "Light"),
-                    (UiTheme::Dark, "Dark"),
-                ] {
-                    if ui.selectable_label(state.theme == theme, name).clicked() {
-                        state.theme = theme;
-                        apply_theme(context, theme);
+
+                let right_button_width = if state.toolbar_overflows {
+                    TOOLBAR_SCROLL_BUTTON_WIDTH
+                } else {
+                    0.0
+                };
+                let scroll_width = (ui.available_width() - right_button_width).max(0.0);
+                let output = egui::ScrollArea::horizontal()
+                    .id_salt("toolbar_scroll")
+                    .auto_shrink([false, false])
+                    .vscroll(false)
+                    .max_width(scroll_width)
+                    .max_height(TOOLBAR_HEIGHT)
+                    .horizontal_scroll_offset(state.toolbar_scroll_offset)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .scroll_source(egui::scroll_area::ScrollSource {
+                        mouse_wheel: false,
+                        ..Default::default()
+                    })
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            toolbar_contents(ui, state.as_mut(), &toolbar_icon_ids, context);
+                        });
+                    });
+                let scroll_limit =
+                    toolbar_scroll_limit(output.content_size.x, output.inner_rect.width());
+                state.toolbar_overflows = scroll_limit > 0.0;
+                state.toolbar_scroll_offset = state.toolbar_scroll_offset.min(scroll_limit);
+
+                if state.toolbar_overflows
+                    && ui
+                        .add_enabled(
+                            state.toolbar_scroll_offset < scroll_limit,
+                            egui::Button::new("▶"),
+                        )
+                        .clicked()
+                {
+                    state.toolbar_scroll_offset = shifted_toolbar_offset(
+                        state.toolbar_scroll_offset,
+                        TOOLBAR_SCROLL_STEP,
+                        scroll_limit,
+                    );
+                }
+
+                if context
+                    .pointer_latest_pos()
+                    .is_some_and(|position| output.inner_rect.contains(position))
+                {
+                    let wheel_delta = context.input(|input| input.smooth_scroll_delta);
+                    if wheel_delta != egui::Vec2::ZERO && scroll_limit > 0.0 {
+                        state.toolbar_scroll_offset = shifted_toolbar_offset(
+                            state.toolbar_scroll_offset,
+                            -(wheel_delta.x + wheel_delta.y),
+                            scroll_limit,
+                        );
+                        context.input_mut(|input| input.smooth_scroll_delta = egui::Vec2::ZERO);
                     }
                 }
-                ui.separator();
-                ui.small("© International GeoGebra Institute · CC BY-NC-SA 4.0");
-                ui.hyperlink_to("Made with GeoGebra®", "https://www.geogebra.org/");
             });
         });
     egui::Panel::left("algebra")
@@ -475,7 +562,7 @@ pub(crate) fn application_chrome(
 
 #[cfg(test)]
 mod tests {
-    use super::TOOL_STACKS;
+    use super::{TOOL_STACKS, shifted_toolbar_offset, toolbar_scroll_limit};
     use crate::state::ActiveTool;
 
     #[test]
@@ -483,5 +570,15 @@ mod tests {
         let mut tools: Vec<_> = TOOL_STACKS.into_iter().flatten().copied().collect();
         tools.sort_by_key(|tool| *tool as u8);
         assert_eq!(tools, ActiveTool::ALL);
+    }
+
+    #[test]
+    fn toolbar_scroll_stays_inside_the_overflow_range() {
+        assert_eq!(toolbar_scroll_limit(200.0, 240.0), 0.0);
+        let limit = toolbar_scroll_limit(640.0, 240.0);
+        assert_eq!(limit, 400.0);
+        assert_eq!(shifted_toolbar_offset(0.0, -180.0, limit), 0.0);
+        assert_eq!(shifted_toolbar_offset(320.0, 180.0, limit), limit);
+        assert_eq!(shifted_toolbar_offset(100.0, 180.0, limit), 280.0);
     }
 }

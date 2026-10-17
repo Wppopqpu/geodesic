@@ -28,6 +28,10 @@ pub(crate) struct GuiState {
     pub(crate) preview: Option<DragPreview>,
     pub(crate) pan_cursor: Option<Vec2>,
     pub(crate) bottom_ui_height: f32,
+    /// Horizontal position of the toolbar's overflow viewport in logical pixels.
+    pub(crate) toolbar_scroll_offset: f32,
+    /// Whether the toolbar's content exceeded its viewport in the previous frame.
+    pub(crate) toolbar_overflows: bool,
     pub(crate) active_tool: ActiveTool,
     pub(crate) tool_inputs: Vec<Label>,
 }
