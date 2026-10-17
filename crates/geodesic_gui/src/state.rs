@@ -27,6 +27,8 @@ pub(crate) struct GuiState {
     pub(crate) dragging: Option<DragTarget>,
     pub(crate) preview: Option<DragPreview>,
     pub(crate) pan_cursor: Option<Vec2>,
+    /// Present only while a middle-button pan that began on the canvas is active.
+    pub(crate) middle_pan_cursor: Option<Vec2>,
     pub(crate) bottom_ui_height: f32,
     /// Horizontal position of the toolbar's overflow viewport in logical pixels.
     pub(crate) toolbar_scroll_offset: f32,

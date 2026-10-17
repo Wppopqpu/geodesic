@@ -376,5 +376,15 @@ mod tests {
             &window,
             &state
         ));
+        assert!(!crate::canvas_contains(
+            bevy::prelude::Vec2::new(221.0, 200.0),
+            &window,
+            &state
+        ));
+        assert!(crate::canvas_contains(
+            bevy::prelude::Vec2::new(225.0, 200.0),
+            &window,
+            &state
+        ));
     }
 }

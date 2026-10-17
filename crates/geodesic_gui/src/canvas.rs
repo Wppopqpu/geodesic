@@ -25,6 +25,8 @@ const MIN_POINT_RADIUS_PIXELS: f32 = 1.0;
 const MAX_POINT_RADIUS_PIXELS: f32 = 9.0;
 const POINT_SELECTION_RADIUS_PIXELS: f32 = 15.0;
 const LINE_SELECTION_RADIUS_PIXELS: f32 = 3.0;
+/// Keep panel resize strips and panel borders owned by the chrome, not the canvas.
+const CANVAS_CHROME_GUTTER: f32 = 4.0;
 
 #[allow(
     clippy::needless_pass_by_value,
@@ -39,6 +41,10 @@ pub(crate) fn canvas_input(
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     mut state: ResMut<GuiState>,
 ) {
+    // Always drain raw messages. Otherwise a wheel or motion event received over
+    // a sidebar can be applied later when the cursor returns to the canvas.
+    let wheel_events: Vec<_> = mouse_wheel.read().copied().collect();
+    let motion_events: Vec<_> = mouse_motion.read().copied().collect();
     let Ok(window) = windows.single() else {
         return;
     };
@@ -46,10 +52,13 @@ pub(crate) fn canvas_input(
         return;
     };
     let cursor_is_on_canvas = canvas_contains(cursor, window, state.as_ref());
-    if !cursor_is_on_canvas && state.dragging.is_none() && state.pan_cursor.is_none() {
+    let canvas_gesture_active =
+        state.dragging.is_some() || state.pan_cursor.is_some() || state.middle_pan_cursor.is_some();
+    if !cursor_is_on_canvas && !canvas_gesture_active {
         state.dragging = None;
         state.preview = None;
         state.pan_cursor = None;
+        state.middle_pan_cursor = None;
         return;
     }
     let Ok((mut transform, mut projection)) = camera.single_mut() else {
@@ -60,7 +69,7 @@ pub(crate) fn canvas_input(
     };
     if cursor_is_on_canvas {
         let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-        for event in mouse_wheel.read() {
+        for event in wheel_events {
             let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
                 continue;
             };
@@ -71,11 +80,17 @@ pub(crate) fn canvas_input(
             transform.translation.y += correction.y;
         }
     }
-    if mouse_buttons.pressed(MouseButton::Middle) {
-        for event in mouse_motion.read() {
+    if mouse_buttons.just_pressed(MouseButton::Middle) && cursor_is_on_canvas {
+        state.middle_pan_cursor = Some(cursor);
+    }
+    if mouse_buttons.pressed(MouseButton::Middle) && state.middle_pan_cursor.is_some() {
+        for event in motion_events {
             transform.translation.x -= event.delta.x * orthographic.scale;
             transform.translation.y += event.delta.y * orthographic.scale;
         }
+    }
+    if mouse_buttons.just_released(MouseButton::Middle) {
+        state.middle_pan_cursor = None;
     }
 
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
@@ -510,10 +525,10 @@ fn selected_canvas_color(style: &geodesic_io::ObjectStyle) -> Color {
 
 pub(crate) fn canvas_contains(cursor: Vec2, window: &Window, state: &GuiState) -> bool {
     let bottom = window.height() - state.bottom_ui_height;
-    cursor.x >= state.algebra_width
-        && cursor.x <= window.width() - state.style_width
-        && cursor.y >= TOOLBAR_HEIGHT
-        && cursor.y <= bottom
+    cursor.x > state.algebra_width + CANVAS_CHROME_GUTTER
+        && cursor.x < window.width() - state.style_width - CANVAS_CHROME_GUTTER
+        && cursor.y > TOOLBAR_HEIGHT + CANVAS_CHROME_GUTTER
+        && cursor.y < bottom - CANVAS_CHROME_GUTTER
 }
 
 pub(crate) fn screen_to_world(
