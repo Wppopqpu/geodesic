@@ -423,14 +423,6 @@ fn application_chrome(
         state.command_bar_visible = true;
         state.command_bar_focus_requested = true;
     }
-    draw_axis_labels(
-        context,
-        &windows,
-        &camera,
-        state.command_bar_visible,
-        state.algebra_width,
-        state.style_width,
-    );
     egui::TopBottomPanel::top("toolbar")
         .exact_height(TOOLBAR_HEIGHT)
         .show(context, |ui| {
@@ -522,98 +514,107 @@ fn application_chrome(
                 ui.label("Select a real affine point to edit its direct style.");
             }
         });
-    if !state.command_bar_visible {
-        return;
-    }
+    if state.command_bar_visible {
+        egui::TopBottomPanel::bottom("command_bar")
+            .exact_height(COMMAND_BAR_HEIGHT)
+            .show(context, |ui| {
+                let candidates = command_completions(&state.project.construction, &state.command);
+                if state.completion_query != state.command {
+                    let command = state.command.clone();
+                    state.completion_query.clone_from(&command);
+                    state.completion_index = 0;
+                }
+                if !candidates.is_empty() {
+                    state.completion_index %= candidates.len();
+                }
 
-    egui::TopBottomPanel::bottom("command_bar")
-        .exact_height(COMMAND_BAR_HEIGHT)
-        .show(context, |ui| {
-            let candidates = command_completions(&state.project.construction, &state.command);
-            if state.completion_query != state.command {
-                let command = state.command.clone();
-                state.completion_query.clone_from(&command);
-                state.completion_index = 0;
-            }
-            if !candidates.is_empty() {
-                state.completion_index %= candidates.len();
-            }
-
-            ui.horizontal(|ui| {
-                ui.label(":");
-                ui.vertical(|ui| {
-                    let response = ui.text_edit_singleline(&mut state.command);
-                    let input = ui.input(|input| {
-                        (
-                            input.key_pressed(egui::Key::Tab),
-                            input.key_pressed(egui::Key::ArrowDown),
-                            input.key_pressed(egui::Key::ArrowUp),
-                            input.key_pressed(egui::Key::Enter),
-                            input.key_pressed(egui::Key::Escape),
-                        )
-                    });
-                    if state.command_bar_focus_requested {
-                        response.request_focus();
-                        state.command_bar_focus_requested = false;
-                    }
-                    let focused = response.has_focus();
-                    let mut accept_completion = false;
-
-                    if focused && !candidates.is_empty() {
-                        if input.1 {
-                            state.completion_index =
-                                (state.completion_index + 1) % candidates.len();
-                        } else if input.2 {
-                            state.completion_index = state
-                                .completion_index
-                                .checked_sub(1)
-                                .unwrap_or(candidates.len() - 1);
-                        }
-                        accept_completion = input.0;
-                    } else if focused && input.1 {
-                        let history = state.command_history.clone();
-                        let mut command = state.command.clone();
-                        let mut cursor = state.history_cursor;
-                        history_next(&mut command, &mut cursor, &history);
-                        state.command = command;
-                        state.history_cursor = cursor;
-                    } else if focused && input.2 {
-                        let history = state.command_history.clone();
-                        let mut command = state.command.clone();
-                        let mut cursor = state.history_cursor;
-                        history_previous(&mut command, &mut cursor, &history);
-                        state.command = command;
-                        state.history_cursor = cursor;
-                    }
-
-                    if accept_completion {
-                        state.command =
-                            replace_completion(&state.command, &candidates[state.completion_index]);
-                    } else if input.3 {
-                        submit_command(&mut state);
-                    } else if input.4 {
-                        state.command_bar_visible = false;
-                    }
-
-                    if !candidates.is_empty() {
-                        egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.set_min_width(response.rect.width());
-                            for (index, candidate) in candidates.iter().enumerate() {
-                                if ui
-                                    .selectable_label(index == state.completion_index, candidate)
-                                    .clicked()
-                                {
-                                    state.command = replace_completion(&state.command, candidate);
-                                }
-                            }
+                ui.horizontal(|ui| {
+                    ui.label(":");
+                    ui.vertical(|ui| {
+                        let response = ui.text_edit_singleline(&mut state.command);
+                        let input = ui.input(|input| {
+                            (
+                                input.key_pressed(egui::Key::Tab),
+                                input.key_pressed(egui::Key::ArrowDown),
+                                input.key_pressed(egui::Key::ArrowUp),
+                                input.key_pressed(egui::Key::Enter),
+                                input.key_pressed(egui::Key::Escape),
+                            )
                         });
-                    }
-                    if !state.message.is_empty() {
-                        ui.label(&state.message);
-                    }
+                        if state.command_bar_focus_requested {
+                            response.request_focus();
+                            state.command_bar_focus_requested = false;
+                        }
+                        let focused = response.has_focus();
+                        let mut accept_completion = false;
+
+                        if focused && !candidates.is_empty() {
+                            if input.1 {
+                                state.completion_index =
+                                    (state.completion_index + 1) % candidates.len();
+                            } else if input.2 {
+                                state.completion_index = state
+                                    .completion_index
+                                    .checked_sub(1)
+                                    .unwrap_or(candidates.len() - 1);
+                            }
+                            accept_completion = input.0;
+                        } else if focused && input.1 {
+                            let history = state.command_history.clone();
+                            let mut command = state.command.clone();
+                            let mut cursor = state.history_cursor;
+                            history_next(&mut command, &mut cursor, &history);
+                            state.command = command;
+                            state.history_cursor = cursor;
+                        } else if focused && input.2 {
+                            let history = state.command_history.clone();
+                            let mut command = state.command.clone();
+                            let mut cursor = state.history_cursor;
+                            history_previous(&mut command, &mut cursor, &history);
+                            state.command = command;
+                            state.history_cursor = cursor;
+                        }
+
+                        if accept_completion {
+                            state.command = replace_completion(
+                                &state.command,
+                                &candidates[state.completion_index],
+                            );
+                        } else if input.3 {
+                            submit_command(&mut state);
+                        } else if input.4 {
+                            state.command_bar_visible = false;
+                        }
+
+                        if !candidates.is_empty() {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                ui.set_min_width(response.rect.width());
+                                for (index, candidate) in candidates.iter().enumerate() {
+                                    if ui
+                                        .selectable_label(
+                                            index == state.completion_index,
+                                            candidate,
+                                        )
+                                        .clicked()
+                                    {
+                                        state.command =
+                                            replace_completion(&state.command, candidate);
+                                    }
+                                }
+                            });
+                        }
+                        if !state.message.is_empty() {
+                            ui.label(&state.message);
+                        }
+                    });
                 });
+                ui.small(command_hint(&state.command));
             });
-            ui.small(command_hint(&state.command));
+    }
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE)
+        .show(context, |ui| {
+            draw_axis_labels(ui.painter(), ui.max_rect(), &windows, &camera);
         });
 }
 
@@ -636,12 +637,10 @@ fn submit_command(state: &mut GuiState) {
     reason = "Axis labels use the f32 coordinates of the Bevy canvas."
 )]
 fn draw_axis_labels(
-    context: &egui::Context,
+    painter: &egui::Painter,
+    canvas_rect: egui::Rect,
     windows: &Query<&Window, With<PrimaryWindow>>,
     camera: &Query<(&Transform, &Projection), With<Camera2d>>,
-    command_bar_visible: bool,
-    algebra_width: f32,
-    style_width: f32,
 ) {
     let Some((left, right, bottom, top, scale)) = visible_world_bounds(windows, camera) else {
         return;
@@ -649,18 +648,6 @@ fn draw_axis_labels(
     let Ok(window) = windows.single() else {
         return;
     };
-    let canvas_rect = egui::Rect::from_min_max(
-        egui::pos2(algebra_width, TOOLBAR_HEIGHT),
-        egui::pos2(
-            window.width() - style_width,
-            window.height()
-                - if command_bar_visible {
-                    COMMAND_BAR_HEIGHT
-                } else {
-                    0.0
-                },
-        ),
-    );
     let Ok((transform, Projection::Orthographic(orthographic))) = camera.single() else {
         return;
     };
@@ -698,7 +685,7 @@ fn draw_axis_labels(
             continue;
         }
         axis_label(
-            context,
+            painter,
             canvas_rect,
             egui::pos2(screen_x + 3.0, x_label_y),
             value,
@@ -731,7 +718,7 @@ fn draw_axis_labels(
             continue;
         }
         axis_label(
-            context,
+            painter,
             canvas_rect,
             egui::pos2(y_label_x, screen_y - 8.0),
             value,
@@ -747,7 +734,7 @@ fn world_to_screen_y(world_y: f32, camera_y: f32, screen_height: f32, scale: f32
 }
 
 fn axis_label(
-    context: &egui::Context,
+    painter: &egui::Painter,
     canvas_rect: egui::Rect,
     position: egui::Pos2,
     value: f32,
@@ -755,21 +742,25 @@ fn axis_label(
     color: egui::Color32,
     _axis: &str,
 ) {
-    let painter = context.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("axis_labels"),
-    ));
     let font = egui::FontId::proportional(11.0);
     let galley = painter.layout_no_wrap(format_coordinate(value, step), font, color);
-    let max_x = (canvas_rect.right() - galley.size().x).max(canvas_rect.left());
-    let max_y = (canvas_rect.bottom() - galley.size().y).max(canvas_rect.top());
-    let position = egui::pos2(
-        position.x.clamp(canvas_rect.left(), max_x),
-        position.y.clamp(canvas_rect.top(), max_y),
-    );
+    let position = clamp_label_position(position, galley.size(), canvas_rect);
     painter
         .with_clip_rect(canvas_rect)
         .galley(position, galley, color);
+}
+
+fn clamp_label_position(
+    position: egui::Pos2,
+    text_size: egui::Vec2,
+    bounds: egui::Rect,
+) -> egui::Pos2 {
+    let max_x = (bounds.right() - text_size.x).max(bounds.left());
+    let max_y = (bounds.bottom() - text_size.y).max(bounds.top());
+    egui::pos2(
+        position.x.clamp(bounds.left(), max_x),
+        position.y.clamp(bounds.top(), max_y),
+    )
 }
 
 fn format_coordinate(value: f32, step: f32) -> String {
@@ -1016,7 +1007,7 @@ fn parse_coordinate(source: &str) -> Result<f64, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        GuiState, UiTheme, command_completions, command_hint, execute_command, hex_color,
+        GuiState, UiTheme, command_completions, command_hint, egui, execute_command, hex_color,
         history_next, history_previous, replace_completion, rgb,
     };
     use geodesic_core::Construction;
@@ -1204,5 +1195,22 @@ mod tests {
     #[test]
     fn projects_horizontal_axis_using_camera_translation_direction() {
         assert!((super::world_to_screen_y(0.0, 1.0, 100.0, 0.5) - 52.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clamps_label_rect_inside_each_canvas_edge() {
+        let bounds = egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(90.0, 80.0));
+        let size = egui::vec2(20.0, 10.0);
+        for position in [
+            egui::pos2(0.0, 30.0),
+            egui::pos2(100.0, 30.0),
+            egui::pos2(30.0, 0.0),
+            egui::pos2(30.0, 100.0),
+        ] {
+            let clamped = super::clamp_label_position(position, size, bounds);
+            let label_rect = egui::Rect::from_min_size(clamped, size);
+            assert!(bounds.contains(label_rect.min));
+            assert!(bounds.contains(label_rect.max));
+        }
     }
 }
