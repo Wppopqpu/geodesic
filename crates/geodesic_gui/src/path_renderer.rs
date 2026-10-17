@@ -153,12 +153,12 @@ mod tests {
     use super::*;
 
     fn area(painter: &PathPainter) -> f32 {
-        painter
-            .geometry
-            .indices
-            .chunks_exact(3)
+        let (triangles, remainder) = painter.geometry.indices.as_chunks::<3>();
+        assert_eq!(remainder.len(), 0);
+        triangles
+            .iter()
             .map(|triangle| {
-                let [a, b, c] = [triangle[0], triangle[1], triangle[2]].map(|index| {
+                let [a, b, c] = triangle.map(|index| {
                     let p = painter.geometry.vertices[index as usize].position;
                     Vec2::new(p[0], p[1])
                 });

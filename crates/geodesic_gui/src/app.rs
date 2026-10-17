@@ -10,9 +10,7 @@ pub(crate) fn run() {
         .insert_resource(ClearColor(Color::srgb(0.97, 0.97, 0.98)))
         .insert_resource(GuiState::default())
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: false,
-        })
+        .add_plugins(EguiPlugin::default())
         .add_systems(Startup, setup)
         .add_systems(
             Update,

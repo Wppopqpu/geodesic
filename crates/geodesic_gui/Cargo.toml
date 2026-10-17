@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.16.1"
-bevy_egui = "0.34.1"
+bevy = "0.20.0"
+bevy_egui = "0.43.1"
 # General path fill/stroke tessellation (including Bezier curves) is not
 # provided by Bevy's primitive meshes or gizmos. Kept inside the GUI adapter.
 lyon_tessellation = "1.0.22"

@@ -96,7 +96,7 @@ fn imports_bounded_constructions_from_geogebra_commands() {
     }
     let (project, report) = import_ggb(bytes.get_ref()).expect("import");
     assert_eq!(report.converted, 3);
-    assert!(report.placeholders.is_empty());
+    assert_eq!(report.placeholders.len(), 0);
     assert!(matches!(
         project
             .construction

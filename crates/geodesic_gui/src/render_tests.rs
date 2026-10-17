@@ -152,14 +152,15 @@ fn capture_canvas_paths() {
 
 fn run_capture(state: GuiState, dpi: f32, scale: f32) {
     let mut app = App::new();
-    let mut winit = WinitPlugin::<bevy::winit::WakeUp>::default();
-    winit.run_on_any_thread = true;
+    let winit = WinitPlugin {
+        run_on_any_thread: true,
+    };
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Geodesic path regression".to_owned(),
-                    resolution: WindowResolution::new(640.0, 400.0).with_scale_factor_override(dpi),
+                    resolution: WindowResolution::new(640, 400).with_scale_factor_override(dpi),
                     ..default()
                 }),
                 ..default()
@@ -189,7 +190,7 @@ fn run_capture(state: GuiState, dpi: f32, scale: f32) {
 fn capture_after_warmup(
     mut commands: Commands,
     mut frames: Local<u32>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     *frames += 1;
     if *frames == 30 {
@@ -199,10 +200,10 @@ fn capture_after_warmup(
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path))
             .observe(
-                |capture: Trigger<ScreenshotCaptured>, mut exit: EventWriter<AppExit>| {
-                    assert!(capture.width() >= 640);
-                    assert!(capture.height() >= 400);
-                    verify_pixels(&capture);
+                |capture: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+                    assert!(capture.event().width() >= 640);
+                    assert!(capture.event().height() >= 400);
+                    verify_pixels(&capture.event().image);
                     exit.write(AppExit::Success);
                 },
             );

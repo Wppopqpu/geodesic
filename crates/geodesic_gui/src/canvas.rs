@@ -32,8 +32,8 @@ const LINE_SELECTION_RADIUS_PIXELS: f32 = 3.0;
     reason = "Bevy system resources are passed through ECS wrappers."
 )]
 pub(crate) fn canvas_input(
-    mut mouse_wheel: EventReader<MouseWheel>,
-    mut mouse_motion: EventReader<MouseMotion>,
+    mut mouse_wheel: MessageReader<MouseWheel>,
+    mut mouse_motion: MessageReader<MouseMotion>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
@@ -45,7 +45,7 @@ pub(crate) fn canvas_input(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    let cursor_is_on_canvas = canvas_contains(cursor, window, &state);
+    let cursor_is_on_canvas = canvas_contains(cursor, window, state.as_ref());
     if !cursor_is_on_canvas && state.dragging.is_none() && state.pan_cursor.is_none() {
         state.dragging = None;
         state.preview = None;
@@ -81,7 +81,7 @@ pub(crate) fn canvas_input(
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
     if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
         if state.active_tool != ActiveTool::Move {
-            apply_tool_click(&mut state, world, orthographic.scale);
+            apply_tool_click(state.as_mut(), world, orthographic.scale);
             return;
         }
         state.selected = select_canvas_object(&state.project, world, orthographic.scale);
@@ -562,7 +562,7 @@ pub(crate) fn draw_canvas(
     batch.painter.set_pixel_scale(window.scale_factor());
     paint_scene(
         &mut batch.painter,
-        &state,
+        state.as_ref(),
         window.size(),
         transform.translation.truncate(),
         projection.scale,
@@ -578,7 +578,7 @@ pub(crate) fn draw_canvas(
     let mesh_transform = Transform::from_xyz(transform.translation.x, transform.translation.y, 0.0)
         .with_scale(Vec3::new(projection.scale, projection.scale, 1.0));
     if let Some(handle) = &batch.mesh {
-        if let Some(asset) = meshes.get_mut(handle) {
+        if let Some(mut asset) = meshes.get_mut(handle) {
             *asset = mesh;
         }
         if let Some(entity) = batch.entity {
@@ -588,7 +588,7 @@ pub(crate) fn draw_canvas(
         let handle = meshes.add(mesh);
         let material = materials.add(ColorMaterial {
             color: Color::WHITE,
-            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
             ..default()
         });
         batch.entity = Some(

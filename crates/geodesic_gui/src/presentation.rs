@@ -14,8 +14,8 @@ pub(crate) fn wrapped_text_height(
     available_width: f32,
     style: &egui::TextStyle,
 ) -> f32 {
-    let font = style.resolve(context.style().as_ref());
-    let galley = context.fonts(|fonts| {
+    let font = style.resolve(context.style_of(context.theme()).as_ref());
+    let galley = context.fonts_mut(|fonts| {
         fonts.layout(
             text.to_owned(),
             font,

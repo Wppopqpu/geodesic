@@ -88,7 +88,10 @@ mod tests {
             command_completions(&construction, ":line diagonal point_"),
             vec!["point_a", "point_b"]
         );
-        assert!(command_completions(&construction, ":point point_ ").is_empty());
+        assert_eq!(
+            command_completions(&construction, ":point point_ ").len(),
+            0
+        );
         assert_eq!(
             command_completions(&construction, ":move point_"),
             vec!["point_a", "point_b"]
@@ -176,7 +179,7 @@ mod tests {
         history_next(&mut command, &mut cursor, &history);
         assert_eq!(command, ":undo");
         history_next(&mut command, &mut cursor, &history);
-        assert!(command.is_empty());
+        assert_eq!(command, "");
         assert_eq!(cursor, None);
     }
 

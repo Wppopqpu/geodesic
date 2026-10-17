@@ -1,5 +1,8 @@
-use bevy::prelude::{Camera2d, Projection, Query, ResMut, Transform, Window, With};
 use bevy::window::PrimaryWindow;
+use bevy::{
+    ecs::error::Result,
+    prelude::{Camera2d, Projection, Query, ResMut, Transform, Window, With},
+};
 use bevy_egui::{EguiContexts, egui};
 use geodesic_core::Label;
 
@@ -40,10 +43,17 @@ pub(crate) fn application_chrome(
     windows: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Transform, &Projection), With<Camera2d>>,
     mut state: ResMut<GuiState>,
-) {
-    let context = contexts.ctx_mut();
+) -> Result {
+    let context = contexts.ctx_mut()?;
+    let mut viewport_ui = egui::Ui::new(
+        context.clone(),
+        "viewport".into(),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(context.viewport_rect()),
+    );
     if !state.command_bar_visible
-        && !context.wants_keyboard_input()
+        && !context.egui_wants_keyboard_input()
         && context.input(|input| input.key_pressed(egui::Key::Colon))
     {
         state.command_bar_visible = true;
@@ -57,9 +67,9 @@ pub(crate) fn application_chrome(
     if command_bar_tab_pressed {
         state.command_bar_focus_requested = true;
     }
-    egui::TopBottomPanel::top("toolbar")
-        .exact_height(TOOLBAR_HEIGHT)
-        .show(context, |ui| {
+    egui::Panel::top("toolbar")
+        .exact_size(TOOLBAR_HEIGHT)
+        .show(&mut viewport_ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Geodesic");
                 ui.label("Real affine canvas · complex projective kernel");
@@ -96,11 +106,11 @@ pub(crate) fn application_chrome(
                 }
             });
         });
-    egui::SidePanel::left("algebra")
-        .default_width(state.algebra_width)
-        .min_width(160.0)
+    egui::Panel::left("algebra")
+        .default_size(state.algebra_width)
+        .min_size(160.0)
         .resizable(true)
-        .show(context, |ui| {
+        .show(&mut viewport_ui, |ui| {
             state.algebra_width = ui.max_rect().width();
             ui.heading("Algebra");
             match state.project.construction.evaluate() {
@@ -129,11 +139,11 @@ pub(crate) fn application_chrome(
             }
             ui.allocate_space(ui.available_size());
         });
-    egui::SidePanel::right("style_editor")
-        .default_width(state.style_width)
-        .min_width(160.0)
+    egui::Panel::right("style_editor")
+        .default_size(state.style_width)
+        .min_size(160.0)
         .resizable(true)
-        .show(context, |ui| {
+        .show(&mut viewport_ui, |ui| {
             state.style_width = ui.max_rect().width();
             ui.heading("Style");
             if let Some(label) = state.selected.clone() {
@@ -234,15 +244,15 @@ pub(crate) fn application_chrome(
         let hint_height = wrapped_text_height(
             context,
             hint,
-            context.available_rect().width(),
+            context.viewport_rect().width(),
             &egui::TextStyle::Small,
         );
         let command_height =
             COMMAND_BAR_HEIGHT + COMPLETION_ROW_HEIGHT * candidates.len() as f32 + hint_height;
         state.bottom_ui_height = command_height;
-        egui::TopBottomPanel::bottom("command_bar")
-            .exact_height(command_height)
-            .show(context, |ui| {
+        egui::Panel::bottom("command_bar")
+            .exact_size(command_height)
+            .show(&mut viewport_ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(":");
                     ui.vertical(|ui| {
@@ -340,13 +350,13 @@ pub(crate) fn application_chrome(
         let message_height = wrapped_text_height(
             context,
             &state.message,
-            context.available_rect().width(),
+            context.viewport_rect().width(),
             &egui::TextStyle::Body,
         ) + MESSAGE_BAR_VERTICAL_PADDING;
         state.bottom_ui_height += message_height;
-        egui::TopBottomPanel::bottom("message_bar")
-            .exact_height(message_height)
-            .show(context, |ui| {
+        egui::Panel::bottom("message_bar")
+            .exact_size(message_height)
+            .show(&mut viewport_ui, |ui| {
                 let text = if state.message.starts_with("error:") {
                     egui::RichText::new(&state.message).color(egui::Color32::from_rgb(190, 55, 55))
                 } else {
@@ -357,7 +367,8 @@ pub(crate) fn application_chrome(
     }
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show(context, |ui| {
+        .show(&mut viewport_ui, |ui| {
             draw_axis_labels(ui.painter(), ui.max_rect(), &windows, &camera);
         });
+    Ok(())
 }
