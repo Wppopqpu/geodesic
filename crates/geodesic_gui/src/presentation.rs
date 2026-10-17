@@ -1,5 +1,5 @@
 use bevy::prelude::{Camera2d, Color, Projection, Query, Transform, Window, With};
-use bevy::window::PrimaryWindow;
+use bevy::window::{PrimaryWindow, WindowTheme};
 use bevy_egui::egui;
 
 use crate::{
@@ -218,10 +218,25 @@ fn scientific_coordinate(value: f32) -> String {
     format!("{mantissa}e{exponent}")
 }
 
-pub(crate) fn apply_theme(context: &egui::Context, theme: UiTheme) {
+pub(crate) fn apply_theme(
+    context: &egui::Context,
+    theme: UiTheme,
+    system_theme: Option<WindowTheme>,
+) {
+    context.set_visuals(match resolved_visuals(theme, system_theme) {
+        egui::Theme::Light => egui::Visuals::light(),
+        egui::Theme::Dark => egui::Visuals::dark(),
+    });
+}
+
+fn resolved_visuals(theme: UiTheme, system_theme: Option<WindowTheme>) -> egui::Theme {
     match theme {
-        UiTheme::System | UiTheme::Light => context.set_visuals(egui::Visuals::light()),
-        UiTheme::Dark => context.set_visuals(egui::Visuals::dark()),
+        UiTheme::System => match system_theme.unwrap_or(WindowTheme::Light) {
+            WindowTheme::Light => egui::Theme::Light,
+            WindowTheme::Dark => egui::Theme::Dark,
+        },
+        UiTheme::Light => egui::Theme::Light,
+        UiTheme::Dark => egui::Theme::Dark,
     }
 }
 
@@ -245,5 +260,38 @@ pub(crate) fn rgb(color: &str) -> [u8; 3] {
         [parse(1..3), parse(3..5), parse(5..7)]
     } else {
         [21, 101, 192]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolved_visuals;
+    use crate::state::UiTheme;
+    use bevy::window::WindowTheme;
+    use bevy_egui::egui;
+
+    #[test]
+    fn system_theme_tracks_the_window_theme() {
+        assert_eq!(
+            resolved_visuals(UiTheme::System, Some(WindowTheme::Dark)),
+            egui::Theme::Dark
+        );
+        assert_eq!(
+            resolved_visuals(UiTheme::System, Some(WindowTheme::Light)),
+            egui::Theme::Light
+        );
+        assert_eq!(resolved_visuals(UiTheme::System, None), egui::Theme::Light);
+    }
+
+    #[test]
+    fn explicit_theme_ignores_the_window_theme() {
+        assert_eq!(
+            resolved_visuals(UiTheme::Light, Some(WindowTheme::Dark)),
+            egui::Theme::Light
+        );
+        assert_eq!(
+            resolved_visuals(UiTheme::Dark, Some(WindowTheme::Light)),
+            egui::Theme::Dark
+        );
     }
 }

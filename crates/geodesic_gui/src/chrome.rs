@@ -1,4 +1,4 @@
-use bevy::window::PrimaryWindow;
+use bevy::window::{PrimaryWindow, WindowTheme};
 use bevy::{
     ecs::error::Result,
     prelude::{Camera2d, Handle, Image, Projection, Query, Res, ResMut, Transform, Window, With},
@@ -130,6 +130,7 @@ fn toolbar_contents(
     state: &mut GuiState,
     icons: &ToolbarIconIds,
     context: &egui::Context,
+    system_theme: Option<WindowTheme>,
 ) {
     for tools in TOOL_STACKS {
         tool_stack(ui, state, icons, tools);
@@ -143,7 +144,7 @@ fn toolbar_contents(
     ] {
         if ui.selectable_label(state.theme == theme, name).clicked() {
             state.theme = theme;
-            apply_theme(context, theme);
+            apply_theme(context, theme, system_theme);
         }
     }
     ui.separator();
@@ -211,6 +212,8 @@ pub(crate) fn application_chrome(
 ) -> Result {
     let toolbar_icon_ids = ToolbarIconIds::from_assets(&mut contexts, toolbar_icons.as_ref());
     let context = contexts.ctx_mut()?;
+    let system_theme = windows.single().ok().and_then(|window| window.window_theme);
+    apply_theme(context, state.theme, system_theme);
     let mut viewport_ui = egui::Ui::new(
         context.clone(),
         "viewport".into(),
@@ -269,7 +272,13 @@ pub(crate) fn application_chrome(
                     })
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            toolbar_contents(ui, state.as_mut(), &toolbar_icon_ids, context);
+                            toolbar_contents(
+                                ui,
+                                state.as_mut(),
+                                &toolbar_icon_ids,
+                                context,
+                                system_theme,
+                            );
                         });
                     });
                 let scroll_limit =
