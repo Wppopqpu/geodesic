@@ -25,6 +25,7 @@ pub struct Construction {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GeometrySnapshot {
     pub(super) objects: BTreeMap<Label, GeometricObject>,
+    pub(super) undefined: BTreeMap<Label, crate::EvaluationError>,
 }
 
 impl Construction {

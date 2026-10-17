@@ -54,6 +54,69 @@ fn evaluates_a_line_and_intersection_from_dependencies() {
 }
 
 #[test]
+fn temporarily_degenerate_objects_are_undefined_and_recover() {
+    let mut construction = Construction::new();
+    for (name, x, y) in [("point_a", 0.0, 0.0), ("point_b", 1.0, 0.0)] {
+        construction
+            .apply(GeoCommand::AddPoint {
+                label: label(name),
+                point: ProjectivePoint::real_affine(x, y),
+            })
+            .expect("point");
+    }
+    construction
+        .apply(GeoCommand::AddLineThrough {
+            label: label("moving_line"),
+            first: label("point_a"),
+            second: label("point_b"),
+        })
+        .expect("line");
+    construction
+        .apply(GeoCommand::AddLine {
+            label: label("vertical"),
+            line: ProjectiveLine::new(1.0.into(), 0.0.into(), (-0.5).into()).expect("line"),
+        })
+        .expect("line");
+    construction
+        .apply(GeoCommand::AddIntersection {
+            label: label("crossing"),
+            first: label("moving_line"),
+            second: label("vertical"),
+        })
+        .expect("intersection");
+
+    construction
+        .apply(GeoCommand::MovePoint {
+            label: label("point_b"),
+            point: ProjectivePoint::real_affine(0.0, 0.0),
+        })
+        .expect("move");
+    let snapshot = construction
+        .evaluate()
+        .expect("structurally valid snapshot");
+    assert!(snapshot.object(&label("moving_line")).is_none());
+    assert!(snapshot.object(&label("crossing")).is_none());
+    assert_eq!(snapshot.undefined().count(), 2);
+
+    construction
+        .apply(GeoCommand::MovePoint {
+            label: label("point_b"),
+            point: ProjectivePoint::real_affine(1.0, 0.0),
+        })
+        .expect("move");
+    let snapshot = construction.evaluate().expect("recovered snapshot");
+    assert!(matches!(
+        snapshot.object(&label("moving_line")),
+        Some(GeometricObject::Line(_))
+    ));
+    assert!(matches!(
+        snapshot.object(&label("crossing")),
+        Some(GeometricObject::Point(_))
+    ));
+    assert_eq!(snapshot.undefined().count(), 0);
+}
+
+#[test]
 fn rejects_duplicate_public_labels() {
     let mut construction = Construction::new();
     let command = GeoCommand::AddPoint {

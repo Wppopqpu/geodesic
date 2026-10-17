@@ -687,20 +687,13 @@ fn paint_scene(painter: &mut PathPainter, state: &GuiState, size: Vec2, origin: 
             axis,
         );
     }
-    let Ok(snapshot) = state.project.construction.evaluate() else {
+    let Some(snapshot) = preview_snapshot(state) else {
         return;
     };
     // Painter order is explicit: grid, axes, lines, then point markers.
     for (label, object) in snapshot.iter() {
         if let GeometricObject::Line(line) = object {
-            let line = match &state.preview {
-                Some(DragPreview::Line {
-                    label: preview_label,
-                    line,
-                }) if preview_label == label => *line,
-                _ => *line,
-            };
-            paint_line(painter, state, label, line, half, origin, scale);
+            paint_line(painter, state, label, *line, half, origin, scale);
         }
         if let GeometricObject::Segment(segment) = object {
             paint_bounded_line(
@@ -722,16 +715,29 @@ fn paint_scene(painter: &mut PathPainter, state: &GuiState, size: Vec2, origin: 
     }
     for (label, object) in snapshot.iter() {
         if let GeometricObject::Point(point) = object {
-            let point = match &state.preview {
-                Some(DragPreview::Point {
-                    label: preview_label,
-                    point,
-                }) if preview_label == label => *point,
-                _ => *point,
-            };
-            paint_point(painter, state, label, point, half, origin, scale);
+            paint_point(painter, state, label, *point, half, origin, scale);
         }
     }
+}
+
+pub(crate) fn preview_snapshot(state: &GuiState) -> Option<geodesic_core::GeometrySnapshot> {
+    let mut construction = state.project.construction.clone();
+    match state.preview.as_ref() {
+        Some(DragPreview::Point { label, point }) => construction
+            .apply(GeoCommand::MovePoint {
+                label: label.clone(),
+                point: *point,
+            })
+            .ok()?,
+        Some(DragPreview::Line { label, line }) => construction
+            .apply(GeoCommand::MoveLine {
+                label: label.clone(),
+                line: *line,
+            })
+            .ok()?,
+        None => {}
+    }
+    construction.evaluate().ok()
 }
 
 #[allow(

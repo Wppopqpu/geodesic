@@ -76,6 +76,10 @@ pub enum EvaluationError {
         #[source]
         source: ProjectiveError,
     },
+    /// An otherwise valid definition depends on an object currently undefined
+    /// due to a recoverable geometric degeneracy.
+    #[error("cannot evaluate `{label}` while dependency `{dependency}` is undefined")]
+    UndefinedDependency { label: Label, dependency: Label },
 }
 
 /// Failure while navigating construction command history.

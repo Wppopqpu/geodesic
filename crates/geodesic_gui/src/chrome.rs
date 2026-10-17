@@ -467,6 +467,13 @@ pub(crate) fn application_chrome(
                                     ui.small(hint);
                                 }
                             }
+                            for (label, error) in snapshot.undefined() {
+                                ui.label(format!("{label}: undefined"));
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(190, 55, 55),
+                                    error.to_string(),
+                                );
+                            }
                         }
                         Err(error) => {
                             ui.colored_label(egui::Color32::RED, error.to_string());

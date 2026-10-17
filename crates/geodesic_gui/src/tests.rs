@@ -5,7 +5,9 @@ mod tests {
         history_next, history_previous, replace_completion, rgb,
     };
     use bevy_egui::egui;
-    use geodesic_core::{Construction, GeoCommand, ProjectiveLine, ProjectivePoint};
+    use geodesic_core::{
+        Construction, GeoCommand, GeometricObject, ProjectiveLine, ProjectivePoint,
+    };
 
     #[test]
     fn ex_commands_share_core_history() {
@@ -424,5 +426,47 @@ mod tests {
         state.discard_lisp_draft();
         assert!(state.project_is_editable());
         assert_eq!(state.lisp_draft.source, "(geodesic 1)");
+    }
+
+    #[test]
+    fn dragging_preview_re_evaluates_dependent_objects_before_commit() {
+        let mut state = GuiState::default();
+        for (name, x, y) in [("point_a", 0.0, 0.0), ("point_b", 1.0, 0.0)] {
+            state
+                .project
+                .construction
+                .apply(GeoCommand::AddPoint {
+                    label: geodesic_core::Label::parse(name).expect("label"),
+                    point: ProjectivePoint::real_affine(x, y),
+                })
+                .expect("point");
+        }
+        state
+            .project
+            .construction
+            .apply(GeoCommand::AddLineThrough {
+                label: geodesic_core::Label::parse("moving_line").expect("label"),
+                first: geodesic_core::Label::parse("point_a").expect("label"),
+                second: geodesic_core::Label::parse("point_b").expect("label"),
+            })
+            .expect("line");
+        state.preview = Some(crate::state::DragPreview::Point {
+            label: geodesic_core::Label::parse("point_b").expect("label"),
+            point: ProjectivePoint::real_affine(0.0, 1.0),
+        });
+        let formal_construction = state.project.construction.clone();
+
+        let snapshot = crate::canvas::preview_snapshot(&state).expect("preview snapshot");
+        let Some(GeometricObject::Line(line)) =
+            snapshot.object(&geodesic_core::Label::parse("moving_line").expect("label"))
+        else {
+            panic!("line");
+        };
+        assert!(line.is_incident_with(ProjectivePoint::real_affine(0.0, 4.0)));
+        assert!(!line.is_incident_with(ProjectivePoint::real_affine(4.0, 0.0)));
+        assert_eq!(
+            state.project.construction, formal_construction,
+            "preview is not committed"
+        );
     }
 }
