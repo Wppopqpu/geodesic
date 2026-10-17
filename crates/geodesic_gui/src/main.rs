@@ -699,6 +699,7 @@ fn draw_axis_labels(
         }
         axis_label(
             context,
+            canvas_rect,
             egui::pos2(screen_x + 3.0, x_label_y),
             value,
             label_step,
@@ -731,6 +732,7 @@ fn draw_axis_labels(
         }
         axis_label(
             context,
+            canvas_rect,
             egui::pos2(y_label_x, screen_y - 8.0),
             value,
             label_step,
@@ -746,22 +748,28 @@ fn world_to_screen_y(world_y: f32, camera_y: f32, screen_height: f32, scale: f32
 
 fn axis_label(
     context: &egui::Context,
+    canvas_rect: egui::Rect,
     position: egui::Pos2,
     value: f32,
     step: f32,
     color: egui::Color32,
-    axis: &str,
+    _axis: &str,
 ) {
-    egui::Area::new(egui::Id::new(("axis_label", axis, value.to_bits())))
-        .fixed_pos(position)
-        .interactable(false)
-        .show(context, |ui| {
-            ui.label(
-                egui::RichText::new(format_coordinate(value, step))
-                    .size(11.0)
-                    .color(color),
-            );
-        });
+    let painter = context.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("axis_labels"),
+    ));
+    let font = egui::FontId::proportional(11.0);
+    let galley = painter.layout_no_wrap(format_coordinate(value, step), font, color);
+    let max_x = (canvas_rect.right() - galley.size().x).max(canvas_rect.left());
+    let max_y = (canvas_rect.bottom() - galley.size().y).max(canvas_rect.top());
+    let position = egui::pos2(
+        position.x.clamp(canvas_rect.left(), max_x),
+        position.y.clamp(canvas_rect.top(), max_y),
+    );
+    painter
+        .with_clip_rect(canvas_rect)
+        .galley(position, galley, color);
 }
 
 fn format_coordinate(value: f32, step: f32) -> String {
