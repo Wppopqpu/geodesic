@@ -574,6 +574,16 @@ pub(crate) fn application_chrome(
                         }
                     } else if let Some(label) = state.selected.clone() {
                         ui.label(label.to_string());
+                        let category = state
+                            .project
+                            .construction
+                            .definitions()
+                            .find_map(|(candidate, definition)| {
+                                (candidate == &label).then_some(
+                                    geodesic_io::StyleCategory::for_definition(definition),
+                                )
+                            })
+                            .unwrap_or(geodesic_io::StyleCategory::Point);
                         let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
                         if ui.button("Create emphasis preset").clicked()
                             && let Ok(preset) = Label::parse("emphasis")
@@ -592,8 +602,19 @@ pub(crate) fn application_chrome(
                             if ui.button(format!("Use preset {preset}")).clicked() {
                                 state.project.object_styles.insert(
                                     label.clone(),
-                                    geodesic_io::StyleBinding::Fallback(preset),
+                                    geodesic_io::StyleBinding::Fallback(preset.clone()),
                                 );
+                                state.sync_lisp_draft();
+                            }
+                            let category_name = match category {
+                                geodesic_io::StyleCategory::Point => "point",
+                                geodesic_io::StyleCategory::Line => "line",
+                            };
+                            if ui
+                                .button(format!("Use {preset} as {category_name} default"))
+                                .clicked()
+                            {
+                                state.project.category_presets.insert(category, preset);
                                 state.sync_lisp_draft();
                             }
                         }
