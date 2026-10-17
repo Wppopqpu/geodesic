@@ -673,55 +673,61 @@ fn draw_axis_labels(
     let x_axis_y = window.height() / 2.0 - transform.translation.y / orthographic.scale;
     let y_axis_x = window.width() / 2.0 - transform.translation.x / orthographic.scale;
     let label_margin = 16.0;
-    if (canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin).contains(&x_axis_y)
-    {
-        for index in 0..=((right - first_x) / label_step).floor().max(0.0) as usize {
-            let value = first_x + index as f32 * label_step;
-            if value.abs() < grid_step * 0.5 {
-                continue;
-            }
-            let screen_x =
-                window.width() / 2.0 + (value - transform.translation.x) / orthographic.scale;
-            let screen_y = x_axis_y;
-            if !(canvas_rect.left() + label_margin..=canvas_rect.right() - label_margin)
-                .contains(&screen_x)
-            {
-                continue;
-            }
-            axis_label(
-                context,
-                egui::pos2(screen_x + 3.0, screen_y + 3.0),
-                value,
-                label_step,
-                axis_color,
-                "x",
-            );
+    let x_label_y = if x_axis_y < canvas_rect.top() {
+        canvas_rect.top() + 2.0
+    } else if x_axis_y > canvas_rect.bottom() {
+        canvas_rect.bottom() - 16.0
+    } else {
+        x_axis_y + 3.0
+    };
+    for index in 0..=((right - first_x) / label_step).floor().max(0.0) as usize {
+        let value = first_x + index as f32 * label_step;
+        if value.abs() < grid_step * 0.5 {
+            continue;
         }
+        let screen_x =
+            window.width() / 2.0 + (value - transform.translation.x) / orthographic.scale;
+        if !(canvas_rect.left() + label_margin..=canvas_rect.right() - label_margin)
+            .contains(&screen_x)
+        {
+            continue;
+        }
+        axis_label(
+            context,
+            egui::pos2(screen_x + 3.0, x_label_y),
+            value,
+            label_step,
+            axis_color,
+            "x",
+        );
     }
-    if (canvas_rect.left() + label_margin..=canvas_rect.right() - label_margin).contains(&y_axis_x)
-    {
-        for index in 0..=((top - first_y) / label_step).floor().max(0.0) as usize {
-            let value = first_y + index as f32 * label_step;
-            if value.abs() < grid_step * 0.5 {
-                continue;
-            }
-            let screen_x = y_axis_x + 3.0;
-            let screen_y =
-                window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
-            if !(canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin)
-                .contains(&screen_y)
-            {
-                continue;
-            }
-            axis_label(
-                context,
-                egui::pos2(screen_x, screen_y - 8.0),
-                value,
-                label_step,
-                axis_color,
-                "y",
-            );
+    let y_label_x = if y_axis_x < canvas_rect.left() {
+        canvas_rect.left() + 2.0
+    } else if y_axis_x > canvas_rect.right() {
+        canvas_rect.right() - 50.0
+    } else {
+        y_axis_x + 3.0
+    };
+    for index in 0..=((top - first_y) / label_step).floor().max(0.0) as usize {
+        let value = first_y + index as f32 * label_step;
+        if value.abs() < grid_step * 0.5 {
+            continue;
         }
+        let screen_y =
+            window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
+        if !(canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin)
+            .contains(&screen_y)
+        {
+            continue;
+        }
+        axis_label(
+            context,
+            egui::pos2(y_label_x, screen_y - 8.0),
+            value,
+            label_step,
+            axis_color,
+            "y",
+        );
     }
 }
 
@@ -751,6 +757,9 @@ fn format_coordinate(value: f32, step: f32) -> String {
     } else {
         value
     };
+    if value.abs() >= 1e6 || (value != 0.0 && value.abs() < 1e-4) {
+        return scientific_coordinate(value);
+    }
     let decimals = if step >= 1.0 {
         0
     } else if step >= 0.1 {
@@ -772,6 +781,16 @@ fn format_coordinate(value: f32, step: f32) -> String {
     } else {
         fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
     }
+}
+
+fn scientific_coordinate(value: f32) -> String {
+    let formatted = format!("{value:.3e}");
+    let Some((mantissa, exponent)) = formatted.split_once('e') else {
+        return formatted;
+    };
+    let mantissa = mantissa.trim_end_matches('0').trim_end_matches('.');
+    let exponent = exponent.parse::<i32>().unwrap_or_default();
+    format!("{mantissa}e{exponent}")
 }
 
 fn apply_theme(context: &egui::Context, theme: UiTheme) {
@@ -1152,5 +1171,12 @@ mod tests {
         assert_eq!(super::format_coordinate(0.5, 0.5), "0.5");
         assert_eq!(super::format_coordinate(0.25, 0.05), "0.25");
         assert_eq!(super::format_coordinate(-0.000_001, 0.1), "0");
+    }
+
+    #[test]
+    fn uses_compact_scientific_notation_for_extreme_ticks() {
+        assert_eq!(super::format_coordinate(1_000_000.0, 1.0), "1e6");
+        assert_eq!(super::format_coordinate(2.5e7, 1.0), "2.5e7");
+        assert_eq!(super::format_coordinate(0.00001, 0.00001), "1e-5");
     }
 }
