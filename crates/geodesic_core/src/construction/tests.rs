@@ -329,6 +329,72 @@ fn rejects_non_real_points_for_bounded_constructions() {
     ));
 }
 
+#[test]
+fn supporting_lines_accept_segments_and_rays_but_intersections_respect_bounds() {
+    let mut construction = Construction::new();
+    for (name, x, y) in [
+        ("origin", 0.0, 0.0),
+        ("right", 2.0, 0.0),
+        ("above", 1.0, 2.0),
+        ("far_left", -1.0, 1.0),
+    ] {
+        construction
+            .apply(GeoCommand::AddPoint {
+                label: label(name),
+                point: ProjectivePoint::real_affine(x, y),
+            })
+            .expect("point");
+    }
+    for command in [
+        GeoCommand::AddSegment {
+            label: label("segment"),
+            start: label("origin"),
+            end: label("right"),
+        },
+        GeoCommand::AddRay {
+            label: label("ray"),
+            origin: label("origin"),
+            through: label("above"),
+        },
+        GeoCommand::AddLineThrough {
+            label: label("crosses_segment"),
+            first: label("above"),
+            second: label("far_left"),
+        },
+        GeoCommand::AddParallelThrough {
+            label: label("parallel"),
+            point: label("above"),
+            line: label("segment"),
+        },
+        GeoCommand::AddPerpendicularThrough {
+            label: label("perpendicular"),
+            point: label("right"),
+            line: label("ray"),
+        },
+        GeoCommand::AddIntersection {
+            label: label("outside"),
+            first: label("segment"),
+            second: label("crosses_segment"),
+        },
+    ] {
+        construction.apply(command).expect("construction");
+    }
+    let snapshot = construction.evaluate().expect("evaluation");
+    assert!(snapshot.object(&label("parallel")).is_some());
+    assert!(snapshot.object(&label("perpendicular")).is_some());
+    assert!(snapshot.object(&label("outside")).is_none());
+    assert!(snapshot.undefined().any(|(undefined_label, error)| {
+        undefined_label == &label("outside")
+            && matches!(
+                error,
+                crate::EvaluationError::Projective {
+                    source: crate::ProjectiveError::IntersectionOutsideLocus,
+                    ..
+                }
+            )
+    }));
+}
+
 fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
     let Some(GeometricObject::Point(point)) = construction
         .evaluate()

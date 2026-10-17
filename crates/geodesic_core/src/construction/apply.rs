@@ -97,18 +97,18 @@ impl Construction {
                 first,
                 second,
             } => {
-                self.require_line(&first)?;
-                self.require_line(&second)?;
+                self.require_intersectable_locus(&first)?;
+                self.require_intersectable_locus(&second)?;
                 self.insert(label, ObjectDefinition::Intersection { first, second })
             }
             GeoCommand::AddParallelThrough { label, point, line } => {
                 self.require_point(&point)?;
-                self.require_line(&line)?;
+                self.require_supporting_line(&line)?;
                 self.insert(label, ObjectDefinition::ParallelThrough { point, line })
             }
             GeoCommand::AddPerpendicularThrough { label, point, line } => {
                 self.require_point(&point)?;
-                self.require_line(&line)?;
+                self.require_supporting_line(&line)?;
                 self.insert(
                     label,
                     ObjectDefinition::PerpendicularThrough { point, line },
@@ -208,7 +208,7 @@ impl Construction {
         }
     }
 
-    fn require_line(&self, label: &Label) -> Result<(), CommandError> {
+    fn require_supporting_line(&self, label: &Label) -> Result<(), CommandError> {
         match self.definitions.get(label) {
             Some(
                 ObjectDefinition::FreeLine(_)
@@ -216,16 +216,22 @@ impl Construction {
                 | ObjectDefinition::ParallelThrough { .. }
                 | ObjectDefinition::PerpendicularThrough { .. }
                 | ObjectDefinition::PerpendicularBisector { .. }
-                | ObjectDefinition::AngleBisector { .. },
+                | ObjectDefinition::AngleBisector { .. }
+                | ObjectDefinition::Segment { .. }
+                | ObjectDefinition::Ray { .. },
             ) => Ok(()),
             Some(_) => Err(CommandError::WrongObjectKind {
                 label: label.clone(),
-                expected: "line",
+                expected: "line, segment, or ray",
             }),
             None => Err(CommandError::UnknownLabel {
                 label: label.clone(),
             }),
         }
+    }
+
+    fn require_intersectable_locus(&self, label: &Label) -> Result<(), CommandError> {
+        self.require_supporting_line(label)
     }
 
     fn require_real_affine_point(&self, label: &Label) -> Result<(), CommandError> {

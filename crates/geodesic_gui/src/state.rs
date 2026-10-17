@@ -145,6 +145,10 @@ pub(crate) struct ToolbarIcons {
     pub(crate) midpoint: Handle<Image>,
     pub(crate) perpendicular_bisector: Handle<Image>,
     pub(crate) angle_bisector: Handle<Image>,
+    pub(crate) line: Handle<Image>,
+    pub(crate) intersection: Handle<Image>,
+    pub(crate) parallel: Handle<Image>,
+    pub(crate) perpendicular: Handle<Image>,
 }
 
 #[derive(Clone)]
@@ -173,12 +177,20 @@ pub(crate) enum ActiveTool {
     Move,
     /// Create a free point at the cursor.
     Point,
+    /// Create an infinite line through two points.
+    Line,
+    /// Create an intersection of two supported loci.
+    Intersection,
     /// Select two points to create a segment.
     Segment,
     /// Select an origin and a direction point.
     Ray,
     /// Select a tail and a head point.
     Vector,
+    /// Construct a parallel through a point from a supporting line.
+    Parallel,
+    /// Construct a perpendicular through a point from a supporting line.
+    Perpendicular,
     /// Select two points to create their midpoint.
     Midpoint,
     /// Select two points to create their perpendicular bisector.
@@ -189,12 +201,16 @@ pub(crate) enum ActiveTool {
 
 impl ActiveTool {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Move,
         Self::Point,
+        Self::Line,
+        Self::Intersection,
         Self::Segment,
         Self::Ray,
         Self::Vector,
+        Self::Parallel,
+        Self::Perpendicular,
         Self::Midpoint,
         Self::PerpendicularBisector,
         Self::AngleBisector,
@@ -204,9 +220,13 @@ impl ActiveTool {
         match self {
             Self::Move => "Move",
             Self::Point => "Point",
+            Self::Line => "Line",
+            Self::Intersection => "Intersect",
             Self::Segment => "Segment",
             Self::Ray => "Ray",
             Self::Vector => "Vector",
+            Self::Parallel => "Parallel",
+            Self::Perpendicular => "Perpendicular",
             Self::Midpoint => "Midpoint",
             Self::PerpendicularBisector => "Perp bisector",
             Self::AngleBisector => "Angle bisector",
@@ -216,9 +236,13 @@ impl ActiveTool {
     pub(crate) const fn input_count(self) -> usize {
         match self {
             Self::Move | Self::Point => 0,
-            Self::Segment
+            Self::Line
+            | Self::Intersection
+            | Self::Segment
             | Self::Ray
             | Self::Vector
+            | Self::Parallel
+            | Self::Perpendicular
             | Self::Midpoint
             | Self::PerpendicularBisector => 2,
             Self::AngleBisector => 3,
@@ -228,9 +252,13 @@ impl ActiveTool {
     pub(crate) const fn label_prefix(self) -> &'static str {
         match self {
             Self::Move | Self::Point => "point",
+            Self::Line => "line",
+            Self::Intersection => "intersection",
             Self::Segment => "segment",
             Self::Ray => "ray",
             Self::Vector => "vector",
+            Self::Parallel => "parallel",
+            Self::Perpendicular => "perpendicular",
             Self::Midpoint => "midpoint",
             Self::PerpendicularBisector => "perpendicular_bisector",
             Self::AngleBisector => "angle_bisector",

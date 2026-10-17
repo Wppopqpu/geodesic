@@ -24,9 +24,23 @@ use crate::{
 
 const TOOL_STACKS: [&[ActiveTool]; 4] = [
     &[ActiveTool::Move],
-    &[ActiveTool::Point, ActiveTool::Midpoint],
-    &[ActiveTool::Segment, ActiveTool::Ray, ActiveTool::Vector],
-    &[ActiveTool::PerpendicularBisector, ActiveTool::AngleBisector],
+    &[
+        ActiveTool::Point,
+        ActiveTool::Intersection,
+        ActiveTool::Midpoint,
+    ],
+    &[
+        ActiveTool::Line,
+        ActiveTool::Segment,
+        ActiveTool::Ray,
+        ActiveTool::Vector,
+    ],
+    &[
+        ActiveTool::Parallel,
+        ActiveTool::Perpendicular,
+        ActiveTool::PerpendicularBisector,
+        ActiveTool::AngleBisector,
+    ],
 ];
 const TOOLBAR_SCROLL_STEP: f32 = 180.0;
 const TOOLBAR_SCROLL_BUTTON_WIDTH: f32 = 28.0;
@@ -48,6 +62,10 @@ struct ToolbarIconIds {
     midpoint: egui::TextureId,
     perpendicular_bisector: egui::TextureId,
     angle_bisector: egui::TextureId,
+    line: egui::TextureId,
+    intersection: egui::TextureId,
+    parallel: egui::TextureId,
+    perpendicular: egui::TextureId,
 }
 
 impl ToolbarIconIds {
@@ -61,6 +79,10 @@ impl ToolbarIconIds {
             midpoint: add_toolbar_image(contexts, &icons.midpoint),
             perpendicular_bisector: add_toolbar_image(contexts, &icons.perpendicular_bisector),
             angle_bisector: add_toolbar_image(contexts, &icons.angle_bisector),
+            line: add_toolbar_image(contexts, &icons.line),
+            intersection: add_toolbar_image(contexts, &icons.intersection),
+            parallel: add_toolbar_image(contexts, &icons.parallel),
+            perpendicular: add_toolbar_image(contexts, &icons.perpendicular),
         }
     }
 
@@ -68,9 +90,13 @@ impl ToolbarIconIds {
         match tool {
             ActiveTool::Move => self.move_tool,
             ActiveTool::Point => self.point,
+            ActiveTool::Line => self.line,
+            ActiveTool::Intersection => self.intersection,
             ActiveTool::Segment => self.segment,
             ActiveTool::Ray => self.ray,
             ActiveTool::Vector => self.vector,
+            ActiveTool::Parallel => self.parallel,
+            ActiveTool::Perpendicular => self.perpendicular,
             ActiveTool::Midpoint => self.midpoint,
             ActiveTool::PerpendicularBisector => self.perpendicular_bisector,
             ActiveTool::AngleBisector => self.angle_bisector,

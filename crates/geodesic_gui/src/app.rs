@@ -59,5 +59,9 @@ fn setup_ui_resources(
         perpendicular_bisector: asset_server
             .load("geogebra-toolbar/mode_perpendicularbisector.png"),
         angle_bisector: asset_server.load("geogebra-toolbar/mode_anglebisector.png"),
+        line: asset_server.load("geogebra-toolbar/mode_join.png"),
+        intersection: asset_server.load("geogebra-toolbar/mode_intersect.png"),
+        parallel: asset_server.load("geogebra-toolbar/mode_parallelline.png"),
+        perpendicular: asset_server.load("geogebra-toolbar/mode_perpendicularline.png"),
     });
 }

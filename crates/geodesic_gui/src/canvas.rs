@@ -139,6 +139,10 @@ pub(crate) fn canvas_input(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Tool input selection and one-command construction remain together."
+)]
 fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
     if state.active_tool == ActiveTool::Point {
         let Some(label) = next_tool_label(&state.project.construction, ActiveTool::Point) else {
@@ -158,12 +162,26 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
         }
         return;
     }
-    let Some(point) = select_canvas_point(&state.project, world, camera_scale) else {
-        "select a real affine point".clone_into(&mut state.message);
+    let expects_supporting_locus = matches!(
+        state.active_tool,
+        ActiveTool::Intersection | ActiveTool::Parallel | ActiveTool::Perpendicular
+    ) && (state.active_tool == ActiveTool::Intersection
+        || !state.tool_inputs.is_empty());
+    let input = if expects_supporting_locus {
+        select_canvas_supporting_locus(&state.project, world, camera_scale)
+    } else {
+        select_canvas_point(&state.project, world, camera_scale)
+    };
+    let Some(input) = input else {
+        if expects_supporting_locus {
+            "select a line, segment, or ray".clone_into(&mut state.message);
+        } else {
+            "select a real affine point".clone_into(&mut state.message);
+        }
         return;
     };
-    if state.tool_inputs.last() != Some(&point) {
-        state.tool_inputs.push(point);
+    if state.tool_inputs.last() != Some(&input) {
+        state.tool_inputs.push(input);
     }
     let expected = state.active_tool.input_count();
     if state.tool_inputs.len() < expected {
@@ -179,6 +197,16 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
         return;
     };
     let command = match state.active_tool {
+        ActiveTool::Line => GeoCommand::AddLineThrough {
+            label: label.clone(),
+            first: inputs[0].clone(),
+            second: inputs[1].clone(),
+        },
+        ActiveTool::Intersection => GeoCommand::AddIntersection {
+            label: label.clone(),
+            first: inputs[0].clone(),
+            second: inputs[1].clone(),
+        },
         ActiveTool::Segment => GeoCommand::AddSegment {
             label: label.clone(),
             start: inputs[0].clone(),
@@ -193,6 +221,16 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
             label: label.clone(),
             start: inputs[0].clone(),
             end: inputs[1].clone(),
+        },
+        ActiveTool::Parallel => GeoCommand::AddParallelThrough {
+            label: label.clone(),
+            point: inputs[0].clone(),
+            line: inputs[1].clone(),
+        },
+        ActiveTool::Perpendicular => GeoCommand::AddPerpendicularThrough {
+            label: label.clone(),
+            point: inputs[0].clone(),
+            line: inputs[1].clone(),
         },
         ActiveTool::Midpoint => GeoCommand::AddMidpoint {
             label: label.clone(),
@@ -223,6 +261,19 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
         }
         Err(error) => state.message = format!("error: {error}"),
     }
+}
+
+fn select_canvas_supporting_locus(
+    project: &geodesic_io::Project,
+    world: Vec2,
+    camera_scale: f32,
+) -> Option<geodesic_core::Label> {
+    let label = select_canvas_object(project, world, camera_scale)?;
+    matches!(
+        project.construction.evaluate().ok()?.object(&label),
+        Some(GeometricObject::Line(_) | GeometricObject::Segment(_) | GeometricObject::Ray(_))
+    )
+    .then_some(label)
 }
 
 fn next_tool_label(

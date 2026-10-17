@@ -34,6 +34,9 @@ pub enum ProjectiveError {
     /// An angle bisector is undefined for a straight or zero angle.
     #[error("construction requires a non-straight affine angle")]
     DegenerateAffineAngle,
+    /// Supporting lines meet outside a bounded locus.
+    #[error("intersection lies outside a bounded locus")]
+    IntersectionOutsideLocus,
 }
 
 /// Failure while applying a command to a construction.
