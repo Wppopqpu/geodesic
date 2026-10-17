@@ -589,17 +589,9 @@ fn application_chrome(
                     if accept_completion {
                         state.command =
                             replace_completion(&state.command, &candidates[state.completion_index]);
-                    } else if focused && input.3 {
-                        let command = std::mem::take(&mut state.command);
-                        if !command.trim().is_empty() {
-                            state.command_history.push(command.clone());
-                        }
-                        state.history_cursor = None;
-                        state.completion_query.clear();
-                        state.message = execute_command(&mut state.project.construction, &command)
-                            .unwrap_or_else(|error| format!("error: {error}"));
-                        state.command_bar_visible = false;
-                    } else if focused && input.4 {
+                    } else if input.3 {
+                        submit_command(&mut state);
+                    } else if input.4 {
                         state.command_bar_visible = false;
                     }
 
@@ -623,6 +615,18 @@ fn application_chrome(
             });
             ui.small(command_hint(&state.command));
         });
+}
+
+fn submit_command(state: &mut GuiState) {
+    let command = std::mem::take(&mut state.command);
+    if !command.trim().is_empty() {
+        state.command_history.push(command.clone());
+    }
+    state.history_cursor = None;
+    state.completion_query.clear();
+    state.message = execute_command(&mut state.project.construction, &command)
+        .unwrap_or_else(|error| format!("error: {error}"));
+    state.command_bar_visible = false;
 }
 
 #[allow(
@@ -1077,6 +1081,27 @@ mod tests {
     fn command_bar_is_hidden_by_default() {
         assert!(!GuiState::default().command_bar_visible);
         assert!(!GuiState::default().command_bar_focus_requested);
+    }
+
+    #[test]
+    fn submitting_command_does_not_depend_on_text_focus() {
+        let mut state = GuiState {
+            command_bar_visible: true,
+            command: ":point point_a 0 0".to_owned(),
+            ..GuiState::default()
+        };
+        super::submit_command(&mut state);
+        assert!(!state.command_bar_visible);
+        assert_eq!(
+            state
+                .project
+                .construction
+                .evaluate()
+                .expect("evaluation")
+                .iter()
+                .count(),
+            1
+        );
     }
 
     #[test]
