@@ -13,6 +13,7 @@ use geodesic_io::Project;
 const SIDE_PANEL_WIDTH: f32 = 220.0;
 const TOOLBAR_HEIGHT: f32 = 36.0;
 const COMMAND_BAR_HEIGHT: f32 = 44.0;
+const MAX_COMPLETIONS: usize = 8;
 
 #[derive(Resource, Default)]
 struct GuiState {
@@ -429,6 +430,7 @@ fn select_and_drag(
 
 #[allow(
     clippy::too_many_lines,
+    clippy::cast_precision_loss,
     reason = "The application chrome keeps related egui panels in one system."
 )]
 fn application_chrome(
@@ -443,6 +445,14 @@ fn application_chrome(
         && context.input(|input| input.key_pressed(egui::Key::Colon))
     {
         state.command_bar_visible = true;
+        state.command_bar_focus_requested = true;
+    }
+    // Consume Tab before any toolbar widgets are laid out. Consuming it in the
+    // command-bar panel is too late: the toolbar's focusable buttons are
+    // created first and can receive focus during egui's traversal.
+    let command_bar_tab_pressed = state.command_bar_visible
+        && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
+    if command_bar_tab_pressed {
         state.command_bar_focus_requested = true;
     }
     egui::TopBottomPanel::top("toolbar")
@@ -555,10 +565,12 @@ fn application_chrome(
                 ui.horizontal(|ui| {
                     ui.label(":");
                     ui.vertical(|ui| {
-                        let response = ui.text_edit_singleline(&mut state.command);
+                        let response = egui::TextEdit::singleline(&mut state.command)
+                            .lock_focus(true)
+                            .show(ui)
+                            .response;
                         let input = ui.input(|input| {
                             (
-                                input.key_pressed(egui::Key::Tab),
                                 input.key_pressed(egui::Key::ArrowDown),
                                 input.key_pressed(egui::Key::ArrowUp),
                                 input.key_pressed(egui::Key::Enter),
@@ -573,24 +585,24 @@ fn application_chrome(
                         let mut accept_completion = false;
 
                         if focused && !candidates.is_empty() {
-                            if input.1 {
+                            if input.0 {
                                 state.completion_index =
                                     (state.completion_index + 1) % candidates.len();
-                            } else if input.2 {
+                            } else if input.1 {
                                 state.completion_index = state
                                     .completion_index
                                     .checked_sub(1)
                                     .unwrap_or(candidates.len() - 1);
                             }
-                            accept_completion = input.0;
-                        } else if focused && input.1 {
+                            accept_completion = command_bar_tab_pressed;
+                        } else if focused && input.0 {
                             let history = state.command_history.clone();
                             let mut command = state.command.clone();
                             let mut cursor = state.history_cursor;
                             history_next(&mut command, &mut cursor, &history);
                             state.command = command;
                             state.history_cursor = cursor;
-                        } else if focused && input.2 {
+                        } else if focused && input.1 {
                             let history = state.command_history.clone();
                             let mut command = state.command.clone();
                             let mut cursor = state.history_cursor;
@@ -604,9 +616,9 @@ fn application_chrome(
                                 &state.command,
                                 &candidates[state.completion_index],
                             );
-                        } else if input.3 {
+                        } else if input.2 {
                             submit_command(&mut state);
-                        } else if input.4 {
+                        } else if input.3 {
                             state.command_bar_visible = false;
                         }
 
@@ -614,13 +626,10 @@ fn application_chrome(
                             egui::Frame::popup(ui.style()).show(ui, |ui| {
                                 ui.set_min_width(response.rect.width());
                                 for (index, candidate) in candidates.iter().enumerate() {
-                                    if ui
-                                        .selectable_label(
-                                            index == state.completion_index,
-                                            candidate,
-                                        )
-                                        .clicked()
-                                    {
+                                    let button = egui::Button::new(candidate)
+                                        .selected(index == state.completion_index)
+                                        .sense(egui::Sense::CLICK);
+                                    if ui.add(button).clicked() {
                                         state.command =
                                             replace_completion(&state.command, candidate);
                                     }
@@ -629,6 +638,9 @@ fn application_chrome(
                         }
                         if !state.message.is_empty() {
                             ui.label(&state.message);
+                        }
+                        if command_bar_tab_pressed {
+                            response.request_focus();
                         }
                     });
                 });
@@ -945,6 +957,7 @@ fn command_completions(construction: &Construction, source: &str) -> Vec<String>
     labels
         .into_iter()
         .filter(|label| label.starts_with(partial))
+        .take(MAX_COMPLETIONS)
         .collect()
 }
 
@@ -1085,6 +1098,20 @@ mod tests {
             command_completions(&construction, ":move point_"),
             vec!["point_a", "point_b"]
         );
+    }
+
+    #[test]
+    fn limits_label_completions_to_the_visible_candidate_count() {
+        let mut construction = Construction::new();
+        for index in 0..(super::MAX_COMPLETIONS + 2) {
+            execute_command(&mut construction, &format!(":point point_{index:02} 0 0"))
+                .expect("point");
+        }
+
+        let completions = command_completions(&construction, ":move point_");
+        assert_eq!(completions.len(), super::MAX_COMPLETIONS);
+        assert_eq!(completions.first().map(String::as_str), Some("point_00"));
+        assert_eq!(completions.last().map(String::as_str), Some("point_07"));
     }
 
     #[test]
