@@ -176,6 +176,11 @@ fn load_form(project: &mut Project, form: &[lexpr::Value]) -> Result<(), Project
                     second: parse_label(form, 4)?,
                 })?;
         }
+        "point_on_locus" => project.construction.apply(GeoCommand::AddPointOnLocus {
+            label: parse_label(form, 1)?,
+            locus: parse_label(form, 2)?,
+            parameter: number(form, 3)?,
+        })?,
         "script" if form.len() == 3 => project.scripts.push(Script {
             event: string(&form[1])?.to_owned(),
             source: string(&form[2])?.to_owned(),
@@ -212,6 +217,7 @@ fn dependencies_written(definition: &ObjectDefinition, written: &BTreeSet<Label>
         | ObjectDefinition::LineAngleBisector { first, second, .. } => {
             written.contains(first) && written.contains(second)
         }
+        ObjectDefinition::PointOnLocus { locus, .. } => written.contains(locus),
         ObjectDefinition::ParallelThrough { point, line }
         | ObjectDefinition::PerpendicularThrough { point, line } => {
             written.contains(point) && written.contains(line)
@@ -320,6 +326,9 @@ fn write_definition(output: &mut String, label: &Label, definition: &ObjectDefin
             );
         }
         ObjectDefinition::LineAngleBisector { .. } => {}
+        ObjectDefinition::PointOnLocus { locus, parameter } => {
+            let _ = write!(output, " (point_on_locus {label} {locus} {parameter})");
+        }
     }
 }
 

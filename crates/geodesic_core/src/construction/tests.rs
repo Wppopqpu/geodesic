@@ -462,6 +462,57 @@ fn two_line_angle_bisectors_share_undo_and_delete_as_a_group() {
     );
 }
 
+#[test]
+fn point_on_locus_tracks_parent_and_clamps_bounded_parameters() {
+    let mut construction = Construction::new();
+    for (name, x, y) in [("a", 0.0, 0.0), ("b", 2.0, 0.0)] {
+        construction
+            .apply(GeoCommand::AddPoint {
+                label: label(name),
+                point: ProjectivePoint::real_affine(x, y),
+            })
+            .expect("point");
+    }
+    construction
+        .apply(GeoCommand::AddSegment {
+            label: label("segment"),
+            start: label("a"),
+            end: label("b"),
+        })
+        .expect("segment");
+    construction
+        .apply(GeoCommand::AddPointOnLocus {
+            label: label("on_segment"),
+            locus: label("segment"),
+            parameter: 2.0,
+        })
+        .expect("point on segment");
+    assert_eq!(
+        point_at(&construction, "on_segment").renderability(),
+        crate::Renderability::Renderable(crate::RealAffinePoint { x: 2.0, y: 0.0 })
+    );
+    construction
+        .apply(GeoCommand::MovePoint {
+            label: label("b"),
+            point: ProjectivePoint::real_affine(4.0, 0.0),
+        })
+        .expect("move parent");
+    assert_eq!(
+        point_at(&construction, "on_segment").renderability(),
+        crate::Renderability::Renderable(crate::RealAffinePoint { x: 4.0, y: 0.0 })
+    );
+    construction
+        .apply(GeoCommand::MovePointOnLocus {
+            label: label("on_segment"),
+            parameter: 0.25,
+        })
+        .expect("move constrained");
+    assert_eq!(
+        point_at(&construction, "on_segment").renderability(),
+        crate::Renderability::Renderable(crate::RealAffinePoint { x: 1.0, y: 0.0 })
+    );
+}
+
 fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
     let Some(GeometricObject::Point(point)) = construction
         .evaluate()

@@ -5,7 +5,8 @@ use crate::projective::{
     perpendicular_bisector, perpendicular_through, real_affine_point,
 };
 use crate::{
-    EvaluationError, Label, ProjectiveError, ProjectiveLine, ProjectivePoint, STANDARD_PRECISION,
+    EvaluationError, Label, ProjectiveError, ProjectiveLine, ProjectivePoint, Renderability,
+    STANDARD_PRECISION,
 };
 
 use super::{
@@ -171,6 +172,12 @@ impl Construction {
                 )
                 .map_err(|source| projective_error(label, source))?,
             ),
+            ObjectDefinition::PointOnLocus { locus, parameter } => GeometricObject::Point(
+                self.supporting_locus_dependency(label, locus, objects, undefined)?
+                    .point_at(*parameter)
+                    .map_err(|source| projective_error(label, source))?
+                    .projective(),
+            ),
         };
         objects.insert(label.clone(), object);
         Ok(object)
@@ -275,6 +282,37 @@ impl SupportingLocus {
         let dy = end.y - start.y;
         let parameter = ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy);
         parameter >= minimum - STANDARD_PRECISION && parameter <= maximum + STANDARD_PRECISION
+    }
+
+    fn point_at(self, parameter: f64) -> Result<crate::RealAffinePoint, ProjectiveError> {
+        match self {
+            Self::Line(line) => {
+                let Renderability::Renderable(line) = line.renderability() else {
+                    return Err(ProjectiveError::NonRealAffineLine);
+                };
+                Ok(crate::RealAffinePoint {
+                    x: -line.a * line.c - line.b * parameter,
+                    y: -line.b * line.c + line.a * parameter,
+                })
+            }
+            Self::Segment(segment) => Ok(interpolate(
+                segment.start,
+                segment.end,
+                parameter.clamp(0.0, 1.0),
+            )),
+            Self::Ray(ray) => Ok(interpolate(ray.origin, ray.through, parameter.max(0.0))),
+        }
+    }
+}
+
+fn interpolate(
+    start: crate::RealAffinePoint,
+    end: crate::RealAffinePoint,
+    parameter: f64,
+) -> crate::RealAffinePoint {
+    crate::RealAffinePoint {
+        x: start.x + (end.x - start.x) * parameter,
+        y: start.y + (end.y - start.y) * parameter,
     }
 }
 

@@ -85,6 +85,14 @@ pub enum GeoCommand {
         first: Label,
         second: Label,
     },
+    /// Adds a point constrained to a line, segment, or ray.
+    AddPointOnLocus {
+        label: Label,
+        locus: Label,
+        parameter: f64,
+    },
+    /// Changes the parameter of a constrained point without leaving its locus.
+    MovePointOnLocus { label: Label, parameter: f64 },
     /// Removes a definition and its evaluated value.
     Remove { label: Label },
 }

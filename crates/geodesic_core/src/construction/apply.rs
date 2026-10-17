@@ -80,6 +80,27 @@ impl Construction {
                 }),
                 None => Err(CommandError::UnknownLabel { label }),
             },
+            GeoCommand::MovePointOnLocus { label, parameter } => match self
+                .definitions
+                .get_mut(&label)
+            {
+                Some(ObjectDefinition::PointOnLocus {
+                    parameter: existing,
+                    ..
+                }) if parameter.is_finite() => {
+                    *existing = parameter;
+                    Ok(())
+                }
+                Some(ObjectDefinition::PointOnLocus { .. }) => Err(CommandError::WrongObjectKind {
+                    label,
+                    expected: "finite locus parameter",
+                }),
+                Some(_) => Err(CommandError::WrongObjectKind {
+                    label,
+                    expected: "point constrained to a locus",
+                }),
+                None => Err(CommandError::UnknownLabel { label }),
+            },
             GeoCommand::AddLine { label, line } => {
                 self.insert(label, ObjectDefinition::FreeLine(line))
             }
@@ -213,6 +234,20 @@ impl Construction {
                 );
                 Ok(())
             }
+            GeoCommand::AddPointOnLocus {
+                label,
+                locus,
+                parameter,
+            } => {
+                if !parameter.is_finite() {
+                    return Err(CommandError::WrongObjectKind {
+                        label,
+                        expected: "finite locus parameter",
+                    });
+                }
+                self.require_supporting_line(&locus)?;
+                self.insert(label, ObjectDefinition::PointOnLocus { locus, parameter })
+            }
             GeoCommand::Remove { label } => self.remove_with_dependents(&label),
         }
     }
@@ -234,7 +269,8 @@ impl Construction {
             Some(
                 ObjectDefinition::FreePoint(_)
                 | ObjectDefinition::Intersection { .. }
-                | ObjectDefinition::Midpoint { .. },
+                | ObjectDefinition::Midpoint { .. }
+                | ObjectDefinition::PointOnLocus { .. },
             ) => Ok(()),
             Some(_) => Err(CommandError::WrongObjectKind {
                 label: label.clone(),
@@ -345,6 +381,7 @@ fn definition_dependencies(definition: &ObjectDefinition) -> Vec<&Label> {
         | ObjectDefinition::LineAngleBisector { first, second, .. } => vec![first, second],
         ObjectDefinition::ParallelThrough { point, line }
         | ObjectDefinition::PerpendicularThrough { point, line } => vec![point, line],
+        ObjectDefinition::PointOnLocus { locus, .. } => vec![locus],
         ObjectDefinition::Ray { origin, through } => vec![origin, through],
         ObjectDefinition::AngleBisector {
             first,

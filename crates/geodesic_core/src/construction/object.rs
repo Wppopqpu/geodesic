@@ -75,6 +75,8 @@ pub enum ObjectDefinition {
         second: Label,
         branch: LineAngleBisectorBranch,
     },
+    /// A semi-free real-affine point parameterized by a supported locus.
+    PointOnLocus { locus: Label, parameter: f64 },
 }
 
 /// An evaluated geometric value.
