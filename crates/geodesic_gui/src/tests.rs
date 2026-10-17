@@ -5,7 +5,7 @@ mod tests {
         history_next, history_previous, replace_completion, rgb,
     };
     use bevy_egui::egui;
-    use geodesic_core::Construction;
+    use geodesic_core::{Construction, GeoCommand, ProjectiveLine, ProjectivePoint};
 
     #[test]
     fn ex_commands_share_core_history() {
@@ -28,6 +28,28 @@ mod tests {
             3
         );
         execute_command(&mut construction, ":move point_a 2 3").expect("move");
+    }
+
+    #[test]
+    fn ex_move_translates_a_free_line_without_changing_its_direction() {
+        let mut construction = Construction::new();
+        construction
+            .apply(GeoCommand::AddLine {
+                label: geodesic_core::Label::parse("vertical").expect("label"),
+                line: ProjectiveLine::new(1.0.into(), 0.0.into(), (-1.0).into()).expect("line"),
+            })
+            .expect("add line");
+
+        execute_command(&mut construction, ":move vertical 3 2").expect("move line");
+        let Some(geodesic_core::GeometricObject::Line(line)) = construction
+            .evaluate()
+            .expect("evaluation")
+            .object(&geodesic_core::Label::parse("vertical").expect("label"))
+        else {
+            panic!("line");
+        };
+        assert!(line.is_incident_with(ProjectivePoint::real_affine(3.0, 2.0)));
+        assert!(line.is_incident_with(ProjectivePoint::real_affine(3.0, -2.0)));
     }
 
     #[test]
@@ -189,6 +211,23 @@ mod tests {
                 scale,
             ));
             assert!((crate::point_selection_radius_world(0.15, scale) / scale - 15.0).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn line_hit_target_is_constant_in_screen_pixels() {
+        let line = ProjectiveLine::new(0.0.into(), 1.0.into(), 0.0.into()).expect("line");
+        for scale in [0.01, 0.04] {
+            assert!(crate::line_is_hit(
+                line,
+                bevy::prelude::Vec2::new(0.0, 3.0 * scale),
+                scale,
+            ));
+            assert!(!crate::line_is_hit(
+                line,
+                bevy::prelude::Vec2::new(0.0, 3.1 * scale),
+                scale,
+            ));
         }
     }
 

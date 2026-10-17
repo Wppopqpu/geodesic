@@ -28,7 +28,7 @@ pub fn dispatch(
             .trim_start_matches('(')
             .split_whitespace()
             .collect();
-        let command = parse_command(&fields, form.trim())?;
+        let command = parse_command(&fields, form.trim(), construction)?;
         validate_with_steel(&steel_form(&fields)?)?;
         construction.apply(command)?;
         applied += 1;
@@ -36,7 +36,11 @@ pub fn dispatch(
     Ok(applied)
 }
 
-fn parse_command(fields: &[&str], source: &str) -> Result<GeoCommand, ScriptError> {
+fn parse_command(
+    fields: &[&str],
+    source: &str,
+    construction: &Construction,
+) -> Result<GeoCommand, ScriptError> {
     let label = |value: &&str| {
         Label::parse(*value).map_err(|error| ScriptError::Invalid(error.to_string()))
     };
@@ -77,6 +81,37 @@ fn parse_command(fields: &[&str], source: &str) -> Result<GeoCommand, ScriptErro
             first: label(first)?,
             second: label(second)?,
         }),
+        ["geo::move_line", object, x, y] => {
+            let label = label(object)?;
+            let line = match construction
+                .evaluate()
+                .map_err(|error| ScriptError::Invalid(error.to_string()))?
+                .object(&label)
+            {
+                Some(geodesic_core::GeometricObject::Line(line)) => line,
+                Some(geodesic_core::GeometricObject::Point(_)) => {
+                    return Err(ScriptError::Invalid(format!(
+                        "object `{label}` is not a line"
+                    )));
+                }
+                None => {
+                    return Err(ScriptError::Invalid(format!(
+                        "object label `{label}` does not exist"
+                    )));
+                }
+            };
+            Ok(GeoCommand::MoveLine {
+                label,
+                line: geodesic_core::parallel_through(
+                    ProjectivePoint::real_affine(
+                        parse_number(x, source)?,
+                        parse_number(y, source)?,
+                    ),
+                    line,
+                )
+                .map_err(|error| ScriptError::Invalid(error.to_string()))?,
+            })
+        }
         ["geo::intersection", object, first, second] => Ok(GeoCommand::AddIntersection {
             label: label(object)?,
             first: label(first)?,
@@ -140,6 +175,11 @@ fn steel_form(fields: &[&str]) -> Result<String, ScriptError> {
             first,
             second,
         ] => Ok(format!("({name} \"{object}\" \"{first}\" \"{second}\")")),
+        ["geo::move_line", label, x, y] => {
+            let x = parse_number(x, "number")?;
+            let y = parse_number(y, "number")?;
+            Ok(format!("(geo::move_line \"{label}\" {x:?} {y:?})"))
+        }
         _ => Err(ScriptError::Invalid(fields.join(" "))),
     }
 }

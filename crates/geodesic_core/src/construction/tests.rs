@@ -127,6 +127,33 @@ fn moves_a_free_point_and_records_the_change() {
     );
 }
 
+#[test]
+fn moves_a_free_line_and_records_the_change() {
+    let mut construction = Construction::new();
+    construction
+        .apply(GeoCommand::AddLine {
+            label: label("vertical"),
+            line: ProjectiveLine::new(1.0.into(), 0.0.into(), (-1.0).into())
+                .expect("valid vertical line"),
+        })
+        .expect("create");
+    construction
+        .apply(GeoCommand::MoveLine {
+            label: label("vertical"),
+            line: ProjectiveLine::new(1.0.into(), 0.0.into(), (-3.0).into())
+                .expect("valid translated line"),
+        })
+        .expect("move");
+
+    assert!(
+        line_at(&construction, "vertical").is_incident_with(ProjectivePoint::real_affine(3.0, 0.0))
+    );
+    construction.undo().expect("undo move");
+    assert!(
+        line_at(&construction, "vertical").is_incident_with(ProjectivePoint::real_affine(1.0, 0.0))
+    );
+}
+
 fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
     let Some(GeometricObject::Point(point)) = construction
         .evaluate()
@@ -136,4 +163,15 @@ fn point_at(construction: &Construction, name: &str) -> ProjectivePoint {
         panic!("point");
     };
     point
+}
+
+fn line_at(construction: &Construction, name: &str) -> ProjectiveLine {
+    let Some(GeometricObject::Line(line)) = construction
+        .evaluate()
+        .expect("evaluation")
+        .object(&label(name))
+    else {
+        panic!("line");
+    };
+    line
 }

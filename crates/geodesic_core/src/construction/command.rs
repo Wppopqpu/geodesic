@@ -13,6 +13,8 @@ pub enum GeoCommand {
         label: Label,
         point: ProjectivePoint,
     },
+    /// Moves an existing free line without changing its direction.
+    MoveLine { label: Label, line: ProjectiveLine },
     /// Adds a free line.
     AddLine { label: Label, line: ProjectiveLine },
     /// Adds a line derived from two points.

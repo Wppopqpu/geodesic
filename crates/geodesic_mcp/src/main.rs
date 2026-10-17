@@ -117,6 +117,32 @@ fn apply_request(
                 json_number(command, "y")?,
             ),
         },
+        "move_line" => {
+            let label = json_label(command, "label")?;
+            let line = match project
+                .construction
+                .evaluate()
+                .map_err(|error| error.to_string())?
+                .object(&label)
+            {
+                Some(geodesic_core::GeometricObject::Line(line)) => line,
+                Some(geodesic_core::GeometricObject::Point(_)) => {
+                    return Err(format!("object `{label}` is not a line"));
+                }
+                None => return Err(format!("object label `{label}` does not exist")),
+            };
+            geodesic_core::GeoCommand::MoveLine {
+                label,
+                line: geodesic_core::parallel_through(
+                    geodesic_core::ProjectivePoint::real_affine(
+                        json_number(command, "x")?,
+                        json_number(command, "y")?,
+                    ),
+                    line,
+                )
+                .map_err(|error| error.to_string())?,
+            }
+        }
         "add_intersection" => geodesic_core::GeoCommand::AddIntersection {
             label: json_label(command, "label")?,
             first: json_label(command, "first")?,

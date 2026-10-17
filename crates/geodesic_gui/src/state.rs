@@ -1,5 +1,5 @@
 use bevy::prelude::{Resource, Vec2};
-use geodesic_core::{Label, ProjectivePoint};
+use geodesic_core::{Label, ProjectiveLine, ProjectivePoint};
 use geodesic_io::Project;
 
 pub(crate) const SIDE_PANEL_WIDTH: f32 = 220.0;
@@ -24,10 +24,28 @@ pub(crate) struct GuiState {
     pub(crate) algebra_width: f32,
     pub(crate) style_width: f32,
     pub(crate) selected: Option<Label>,
-    pub(crate) dragging: Option<Label>,
-    pub(crate) preview: Option<(Label, ProjectivePoint)>,
+    pub(crate) dragging: Option<DragTarget>,
+    pub(crate) preview: Option<DragPreview>,
     pub(crate) pan_cursor: Option<Vec2>,
     pub(crate) bottom_ui_height: f32,
+}
+
+#[derive(Clone)]
+pub(crate) enum DragTarget {
+    Point(Label),
+    Line { label: Label, line: ProjectiveLine },
+}
+
+#[derive(Clone)]
+pub(crate) enum DragPreview {
+    Point {
+        label: Label,
+        point: ProjectivePoint,
+    },
+    Line {
+        label: Label,
+        line: ProjectiveLine,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

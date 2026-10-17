@@ -65,6 +65,17 @@ impl Construction {
                 }),
                 None => Err(CommandError::UnknownLabel { label }),
             },
+            GeoCommand::MoveLine { label, line } => match self.definitions.get_mut(&label) {
+                Some(ObjectDefinition::FreeLine(existing)) => {
+                    *existing = line;
+                    Ok(())
+                }
+                Some(_) => Err(CommandError::WrongObjectKind {
+                    label,
+                    expected: "free line",
+                }),
+                None => Err(CommandError::UnknownLabel { label }),
+            },
             GeoCommand::AddLine { label, line } => {
                 self.insert(label, ObjectDefinition::FreeLine(line))
             }

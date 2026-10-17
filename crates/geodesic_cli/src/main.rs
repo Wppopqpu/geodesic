@@ -57,6 +57,11 @@ enum Operation {
         x: f64,
         y: f64,
     },
+    MoveLine {
+        label: String,
+        x: f64,
+        y: f64,
+    },
     AddIntersection {
         label: String,
         first: String,
@@ -177,6 +182,7 @@ fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> 
             },
         )
         .map_err(|error| error.to_string()),
+        Operation::MoveLine { label, x, y } => move_free_line(project, &label, x, y),
         Operation::AddIntersection {
             label,
             first,
@@ -217,6 +223,32 @@ fn apply_operation(project: &mut geodesic_io::Project, operation: Operation) -> 
             .redo()
             .map_err(|error| error.to_string()),
     }
+}
+
+fn move_free_line(
+    project: &mut geodesic_io::Project,
+    label: &str,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    let label = parse_label(label)?;
+    let line = match project
+        .construction
+        .evaluate()
+        .map_err(|error| error.to_string())?
+        .object(&label)
+    {
+        Some(geodesic_core::GeometricObject::Line(line)) => line,
+        Some(geodesic_core::GeometricObject::Point(_)) => {
+            return Err(format!("object `{label}` is not a line"));
+        }
+        None => return Err(format!("object label `{label}` does not exist")),
+    };
+    let line =
+        geodesic_core::parallel_through(geodesic_core::ProjectivePoint::real_affine(x, y), line)
+            .map_err(|error| error.to_string())?;
+    geodesic_io::apply_command(project, geodesic_core::GeoCommand::MoveLine { label, line })
+        .map_err(|error| error.to_string())
 }
 
 fn parse_label(value: &str) -> Result<geodesic_core::Label, String> {

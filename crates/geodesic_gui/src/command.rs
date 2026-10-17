@@ -1,4 +1,6 @@
-use geodesic_core::{Construction, GeoCommand, GeometricObject, Label, ProjectivePoint};
+use geodesic_core::{
+    Construction, GeoCommand, GeometricObject, Label, ProjectivePoint, parallel_through,
+};
 
 use crate::state::MAX_COMPLETIONS;
 
@@ -40,13 +42,26 @@ pub(crate) fn execute_command(
             let label = parse_label(fields[1])?;
             let x = parse_coordinate(fields[2])?;
             let y = parse_coordinate(fields[3])?;
-            construction
-                .apply(GeoCommand::MovePoint {
+            let object = construction
+                .evaluate()
+                .map_err(|error| error.to_string())?
+                .object(&label)
+                .ok_or_else(|| format!("object label `{label}` does not exist"))?;
+            let command = match object {
+                GeometricObject::Point(_) => GeoCommand::MovePoint {
                     label: label.clone(),
                     point: ProjectivePoint::real_affine(x, y),
-                })
+                },
+                GeometricObject::Line(line) => GeoCommand::MoveLine {
+                    label: label.clone(),
+                    line: parallel_through(ProjectivePoint::real_affine(x, y), line)
+                        .map_err(|error| error.to_string())?,
+                },
+            };
+            construction
+                .apply(command)
                 .map_err(|error| error.to_string())?;
-            Ok(format!("moved point {label}"))
+            Ok(format!("moved object {label}"))
         }
         "undo" if fields.len() == 1 => construction
             .undo()
@@ -103,7 +118,9 @@ fn labels_for_position(construction: &Construction, command: &str, position: usi
         .iter()
         .filter(|(_, object)| match command {
             "point" | "line" if position == 1 => true,
-            "move" if position == 1 => matches!(object, GeometricObject::Point(_)),
+            "move" if position == 1 => {
+                matches!(object, GeometricObject::Point(_) | GeometricObject::Line(_))
+            }
             "line" if position >= 2 => matches!(object, GeometricObject::Point(_)),
             _ => false,
         })
@@ -135,7 +152,7 @@ pub(crate) fn command_hint(source: &str) -> &'static str {
         }
         Some("point") => "usage: :point label x y",
         Some("line") => "usage: :line label point_a point_b",
-        Some("move") => "usage: :move label x y",
+        Some("move") => "usage: :move free_point_or_line x y",
         Some("undo") => "usage: :undo",
         Some("redo") => "usage: :redo",
         Some(_) => "unknown command; use :point, :line, :move, :undo, or :redo",
