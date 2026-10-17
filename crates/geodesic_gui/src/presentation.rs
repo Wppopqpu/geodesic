@@ -27,6 +27,10 @@ pub(crate) fn wrapped_text_height(
 }
 
 pub(crate) fn submit_command(state: &mut GuiState) {
+    if !state.project_is_editable() {
+        "error: resolve or discard the invalid Lisp draft first".clone_into(&mut state.message);
+        return;
+    }
     let command = std::mem::take(&mut state.command);
     if !command.trim().is_empty() {
         state.command_history.push(command.clone());
@@ -35,6 +39,9 @@ pub(crate) fn submit_command(state: &mut GuiState) {
     state.completion_query.clear();
     state.message = execute_command(&mut state.project.construction, &command)
         .unwrap_or_else(|error| format!("error: {error}"));
+    if !state.message.starts_with("error:") {
+        state.sync_lisp_draft();
+    }
     state.command_bar_visible = false;
 }
 

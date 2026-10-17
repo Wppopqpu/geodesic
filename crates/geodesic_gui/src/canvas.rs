@@ -96,14 +96,24 @@ pub(crate) fn canvas_input(
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
     if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
         if state.active_tool != ActiveTool::Move {
+            if !state.project_is_editable() {
+                "resolve or discard the Lisp draft before creating objects"
+                    .clone_into(&mut state.message);
+                return;
+            }
             apply_tool_click(state.as_mut(), world, orthographic.scale);
             return;
         }
         state.selected = select_canvas_object(&state.project, world, orthographic.scale);
         state.dragging = state
-            .selected
-            .as_ref()
-            .and_then(|label| drag_target(&state.project.construction, label));
+            .project_is_editable()
+            .then(|| {
+                state
+                    .selected
+                    .as_ref()
+                    .and_then(|label| drag_target(&state.project.construction, label))
+            })
+            .flatten();
         state.pan_cursor = (state.selected.is_none()).then_some(cursor);
     }
     if mouse_buttons.pressed(MouseButton::Left) {
@@ -120,6 +130,9 @@ pub(crate) fn canvas_input(
         if let Some(target) = state.dragging.take() {
             state.message = apply_drag(&mut state.project.construction, target, world)
                 .unwrap_or_else(|error| format!("error: {error}"));
+            if !state.message.starts_with("error:") {
+                state.sync_lisp_draft();
+            }
         }
         state.preview = None;
         state.pan_cursor = None;
@@ -139,6 +152,7 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
             Ok(()) => {
                 state.selected = Some(label.clone());
                 state.message = format!("created point {label}");
+                state.sync_lisp_draft();
             }
             Err(error) => state.message = format!("error: {error}"),
         }
@@ -205,6 +219,7 @@ fn apply_tool_click(state: &mut GuiState, world: Vec2, camera_scale: f32) {
                 "created {} {label}",
                 state.active_tool.name().to_lowercase()
             );
+            state.sync_lisp_draft();
         }
         Err(error) => state.message = format!("error: {error}"),
     }

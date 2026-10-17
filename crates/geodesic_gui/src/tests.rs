@@ -387,4 +387,42 @@ mod tests {
             &state
         ));
     }
+
+    #[test]
+    fn lisp_draft_only_replaces_the_formal_project_after_valid_debounce() {
+        let mut state = GuiState::default();
+        state.lisp_draft.source = "(geodesic 1 (point point_a 1 2))".to_owned();
+        state.edit_lisp_draft(10.0);
+
+        state.reconcile_lisp_draft(10.2);
+        assert!(matches!(
+            state.lisp_draft.state,
+            crate::state::LispDraftState::Pending { .. }
+        ));
+        assert_eq!(state.project.construction.definitions().count(), 0);
+
+        state.reconcile_lisp_draft(10.3);
+        assert!(state.project_is_editable());
+        assert_eq!(state.project.construction.definitions().count(), 1);
+        assert!(state.lisp_draft.source.contains("point_a"));
+    }
+
+    #[test]
+    fn invalid_lisp_draft_preserves_the_formal_project_and_can_be_discarded() {
+        let mut state = GuiState::default();
+        state.lisp_draft.source = "(geodesic 1 (point point_a nope 2))".to_owned();
+        state.edit_lisp_draft(0.0);
+        state.reconcile_lisp_draft(1.0);
+
+        assert!(!state.project_is_editable());
+        assert_eq!(state.project.construction.definitions().count(), 0);
+        assert!(matches!(
+            state.lisp_draft.state,
+            crate::state::LispDraftState::Invalid(_)
+        ));
+
+        state.discard_lisp_draft();
+        assert!(state.project_is_editable());
+        assert_eq!(state.lisp_draft.source, "(geodesic 1)");
+    }
 }

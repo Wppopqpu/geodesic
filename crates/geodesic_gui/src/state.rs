@@ -10,12 +10,15 @@ pub(crate) const COMMAND_BAR_HEIGHT: f32 = 44.0;
 pub(crate) const COMPLETION_ROW_HEIGHT: f32 = 24.0;
 pub(crate) const MESSAGE_BAR_VERTICAL_PADDING: f32 = 8.0;
 pub(crate) const MAX_COMPLETIONS: usize = 8;
+pub(crate) const LISP_DRAFT_DEBOUNCE_SECONDS: f64 = 0.3;
 
 #[derive(Resource, Default)]
 pub(crate) struct GuiState {
     pub(crate) project: Project,
     /// Native location of the persisted project, if it has been opened or saved.
     pub(crate) document_path: Option<PathBuf>,
+    /// Editable document text, separate from the validated formal project.
+    pub(crate) lisp_draft: LispDraft,
     pub(crate) command: String,
     pub(crate) command_bar_visible: bool,
     pub(crate) command_bar_focus_requested: bool,
@@ -47,6 +50,89 @@ pub(crate) struct GuiState {
 /// A visible product-attribution surface.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AboutDialog;
+
+/// Text being edited in the project-data panel.
+#[derive(Clone, Debug)]
+pub(crate) struct LispDraft {
+    pub(crate) source: String,
+    pub(crate) state: LispDraftState,
+}
+
+impl Default for LispDraft {
+    fn default() -> Self {
+        Self {
+            source: geodesic_io::save(&Project::default()),
+            state: LispDraftState::Clean,
+        }
+    }
+}
+
+/// Validation status of [`LispDraft`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum LispDraftState {
+    #[default]
+    Clean,
+    Pending {
+        changed_at_seconds: f64,
+    },
+    Invalid(String),
+}
+
+impl GuiState {
+    /// Whether tools may mutate the formal project.
+    pub(crate) fn project_is_editable(&self) -> bool {
+        matches!(self.lisp_draft.state, LispDraftState::Clean)
+    }
+
+    /// Starts debounce validation after a user changes the Lisp source.
+    pub(crate) fn edit_lisp_draft(&mut self, changed_at_seconds: f64) {
+        self.lisp_draft.state = LispDraftState::Pending { changed_at_seconds };
+    }
+
+    /// Applies a valid draft after the debounce interval without executing scripts.
+    pub(crate) fn reconcile_lisp_draft(&mut self, now_seconds: f64) {
+        let LispDraftState::Pending { changed_at_seconds } = self.lisp_draft.state else {
+            return;
+        };
+        if now_seconds - changed_at_seconds < LISP_DRAFT_DEBOUNCE_SECONDS {
+            return;
+        }
+        match geodesic_io::load(&self.lisp_draft.source) {
+            Ok(project) => {
+                self.project = project;
+                self.selected = None;
+                self.dragging = None;
+                self.preview = None;
+                self.tool_inputs.clear();
+                self.lisp_draft.state = LispDraftState::Clean;
+                "applied Lisp draft".clone_into(&mut self.message);
+            }
+            Err(error) => self.lisp_draft.state = LispDraftState::Invalid(error.to_string()),
+        }
+    }
+
+    /// Replaces the formal project and makes its canonical serialization the draft.
+    pub(crate) fn replace_project(&mut self, project: Project) {
+        self.project = project;
+        self.selected = None;
+        self.dragging = None;
+        self.preview = None;
+        self.tool_inputs.clear();
+        self.sync_lisp_draft();
+    }
+
+    /// Updates the draft after a canvas, style, or command-bar mutation.
+    pub(crate) fn sync_lisp_draft(&mut self) {
+        self.lisp_draft.source = geodesic_io::save(&self.project);
+        self.lisp_draft.state = LispDraftState::Clean;
+    }
+
+    /// Abandons unvalidated source and restores the canonical formal document.
+    pub(crate) fn discard_lisp_draft(&mut self) {
+        self.sync_lisp_draft();
+        "discarded Lisp draft changes".clone_into(&mut self.message);
+    }
+}
 
 /// Loaded toolbar icons with their provenance recorded in `assets/ASSET_MANIFEST.md`.
 #[derive(Resource)]

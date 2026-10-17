@@ -173,10 +173,8 @@ fn file_menu(ui: &mut egui::Ui, state: &mut GuiState) {
                 match load_project(&path) {
                     Ok((project, message)) => {
                         let imported = path.extension().is_some_and(|extension| extension == "ggb");
-                        state.project = project;
+                        state.replace_project(project);
                         state.document_path = (!imported).then_some(path);
-                        state.selected = None;
-                        state.tool_inputs.clear();
                         state.message = message;
                     }
                     Err(error) => state.message = format!("error: {error}"),
@@ -184,16 +182,28 @@ fn file_menu(ui: &mut egui::Ui, state: &mut GuiState) {
             }
             ui.close();
         }
-        if ui.button("Save").clicked() {
+        if ui
+            .add_enabled(state.project_is_editable(), egui::Button::new("Save"))
+            .clicked()
+        {
             save_from_menu(state, false);
             ui.close();
         }
-        if ui.button("Save as…").clicked() {
+        if ui
+            .add_enabled(state.project_is_editable(), egui::Button::new("Save as…"))
+            .clicked()
+        {
             save_from_menu(state, true);
             ui.close();
         }
         ui.separator();
-        if ui.button("Export SVG…").clicked() {
+        if ui
+            .add_enabled(
+                state.project_is_editable(),
+                egui::Button::new("Export SVG…"),
+            )
+            .clicked()
+        {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Scalable Vector Graphics", &["svg"])
                 .set_file_name("untitled.svg")
@@ -313,6 +323,7 @@ pub(crate) fn application_chrome(
     if command_bar_tab_pressed {
         state.command_bar_focus_requested = true;
     }
+    state.reconcile_lisp_draft(context.input(|input| input.time));
     egui::Panel::top("toolbar")
         .exact_size(TOOLBAR_HEIGHT)
         .show(&mut viewport_ui, |ui| {
@@ -410,28 +421,56 @@ pub(crate) fn application_chrome(
                 .hscroll(false)
                 .max_height(content_height)
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                .show(ui, |ui| match state.project.construction.evaluate() {
-                    Ok(snapshot) => {
-                        for (label, object) in snapshot.iter() {
-                            ui.label(format!("{label}: {object:?}"));
-                            let hint = match object {
-                                geodesic_core::GeometricObject::Point(point) => {
-                                    renderability_hint(point.renderability())
-                                }
-                                geodesic_core::GeometricObject::Line(line) => {
-                                    renderability_hint(line.renderability())
-                                }
-                                geodesic_core::GeometricObject::Segment(_)
-                                | geodesic_core::GeometricObject::Ray(_)
-                                | geodesic_core::GeometricObject::Vector(_) => None,
-                            };
-                            if let Some(hint) = hint {
-                                ui.small(hint);
+                .show(ui, |ui| {
+                    ui.label("Project data (Lisp)");
+                    let response = ui.add(
+                        egui::TextEdit::multiline(&mut state.lisp_draft.source)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_rows(12)
+                            .desired_width(f32::INFINITY),
+                    );
+                    if response.changed() {
+                        state.edit_lisp_draft(ui.input(|input| input.time));
+                    }
+                    match &state.lisp_draft.state {
+                        crate::state::LispDraftState::Clean => {
+                            ui.small("Validated and synchronized with the canvas.");
+                        }
+                        crate::state::LispDraftState::Pending { .. } => {
+                            ui.small("Validating Lisp draft…");
+                        }
+                        crate::state::LispDraftState::Invalid(error) => {
+                            ui.colored_label(egui::Color32::RED, error);
+                            if ui.button("Discard draft changes").clicked() {
+                                state.discard_lisp_draft();
                             }
                         }
                     }
-                    Err(error) => {
-                        ui.colored_label(egui::Color32::RED, error.to_string());
+                    ui.separator();
+                    ui.heading("Algebra");
+                    match state.project.construction.evaluate() {
+                        Ok(snapshot) => {
+                            for (label, object) in snapshot.iter() {
+                                ui.label(format!("{label}: {object:?}"));
+                                let hint = match object {
+                                    geodesic_core::GeometricObject::Point(point) => {
+                                        renderability_hint(point.renderability())
+                                    }
+                                    geodesic_core::GeometricObject::Line(line) => {
+                                        renderability_hint(line.renderability())
+                                    }
+                                    geodesic_core::GeometricObject::Segment(_)
+                                    | geodesic_core::GeometricObject::Ray(_)
+                                    | geodesic_core::GeometricObject::Vector(_) => None,
+                                };
+                                if let Some(hint) = hint {
+                                    ui.small(hint);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            ui.colored_label(egui::Color32::RED, error.to_string());
+                        }
                     }
                 });
         });
@@ -451,7 +490,15 @@ pub(crate) fn application_chrome(
                 .max_height(content_height)
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| {
-                    if let Some(label) = state.selected.clone() {
+                    if !state.project_is_editable() {
+                        ui.colored_label(
+                            egui::Color32::RED,
+                            "Style changes are disabled while the Lisp draft is unvalidated.",
+                        );
+                        if ui.button("Discard draft changes").clicked() {
+                            state.discard_lisp_draft();
+                        }
+                    } else if let Some(label) = state.selected.clone() {
                         ui.label(label.to_string());
                         let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
                         if ui.button("Create emphasis preset").clicked()
@@ -464,11 +511,13 @@ pub(crate) fn application_chrome(
                                     opacity: 1.0,
                                 },
                             );
+                            state.sync_lisp_draft();
                         }
                         for preset in presets {
                             if ui.button(format!("Use preset {preset}")).clicked() {
                                 state.project.object_presets.insert(label.clone(), preset);
                                 state.project.object_styles.remove(&label);
+                                state.sync_lisp_draft();
                             }
                         }
                         if state.project.object_presets.contains_key(&label) {
@@ -478,6 +527,7 @@ pub(crate) fn application_chrome(
                                 let style = geodesic_io::effective_style(&state.project, &label);
                                 state.project.object_presets.remove(&label);
                                 state.project.object_styles.insert(label.clone(), style);
+                                state.sync_lisp_draft();
                             }
                         } else {
                             let is_point =
@@ -528,6 +578,7 @@ pub(crate) fn application_chrome(
                                 .changed();
                             if changed {
                                 state.project.object_styles.insert(label, style);
+                                state.sync_lisp_draft();
                             }
                         }
                     } else {
