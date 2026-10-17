@@ -72,7 +72,6 @@ fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
     reason = "Bevy system resources are passed through ECS wrappers."
 )]
 fn canvas_input(
-    mut contexts: EguiContexts,
     mut mouse_wheel: EventReader<MouseWheel>,
     mut mouse_motion: EventReader<MouseMotion>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -80,8 +79,13 @@ fn canvas_input(
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     mut state: ResMut<GuiState>,
 ) {
-    let egui_context = contexts.ctx_mut();
-    if egui_context.is_pointer_over_area() {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    if !canvas_contains(cursor, window, &state) {
         state.dragging = None;
         state.preview = None;
         state.pan_cursor = None;
@@ -93,19 +97,16 @@ fn canvas_input(
     let Projection::Orthographic(orthographic) = projection.as_mut() else {
         return;
     };
-    let cursor = windows.single().ok().and_then(Window::cursor_position);
-    if let (Ok(window), Some(cursor)) = (windows.single(), cursor) {
-        let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-        for event in mouse_wheel.read() {
-            let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
-                continue;
-            };
-            orthographic.scale = next_scale;
-            let after = screen_to_world(cursor, window, transform.translation, orthographic.scale);
-            let correction = anchor - after;
-            transform.translation.x += correction.x;
-            transform.translation.y += correction.y;
-        }
+    let anchor = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+    for event in mouse_wheel.read() {
+        let Some(next_scale) = next_zoom_scale(orthographic.scale, 1.0 - event.y * 0.1) else {
+            continue;
+        };
+        orthographic.scale = next_scale;
+        let after = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+        let correction = anchor - after;
+        transform.translation.x += correction.x;
+        transform.translation.y += correction.y;
     }
     if mouse_buttons.pressed(MouseButton::Middle) {
         for event in mouse_motion.read() {
@@ -114,9 +115,6 @@ fn canvas_input(
         }
     }
 
-    let (Ok(window), Some(cursor)) = (windows.single(), cursor) else {
-        return;
-    };
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
     if mouse_buttons.just_pressed(MouseButton::Left) {
         state.selected = state
@@ -168,6 +166,19 @@ fn canvas_input(
         state.dragging = None;
         state.pan_cursor = None;
     }
+}
+
+fn canvas_contains(cursor: Vec2, window: &Window, state: &GuiState) -> bool {
+    let bottom = window.height()
+        - if state.command_bar_visible {
+            COMMAND_BAR_HEIGHT
+        } else {
+            0.0
+        };
+    cursor.x >= state.algebra_width
+        && cursor.x <= window.width() - state.style_width
+        && cursor.y >= TOOLBAR_HEIGHT
+        && cursor.y <= bottom
 }
 
 fn screen_to_world(cursor: Vec2, window: &Window, translation: Vec3, scale: f32) -> Vec2 {
@@ -1225,5 +1236,26 @@ mod tests {
             assert!(bounds.contains(label_rect.min));
             assert!(bounds.contains(label_rect.max));
         }
+    }
+
+    #[test]
+    fn canvas_input_excludes_sidebars_and_command_bar() {
+        let state = GuiState {
+            algebra_width: 220.0,
+            style_width: 220.0,
+            command_bar_visible: true,
+            ..GuiState::default()
+        };
+        let window = bevy::window::Window::default();
+        assert!(!super::canvas_contains(
+            bevy::prelude::Vec2::new(100.0, 200.0),
+            &window,
+            &state
+        ));
+        assert!(!super::canvas_contains(
+            bevy::prelude::Vec2::new(500.0, 20.0),
+            &window,
+            &state
+        ));
     }
 }
