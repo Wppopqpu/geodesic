@@ -29,6 +29,7 @@ struct GuiState {
     selected: Option<Label>,
     dragging: Option<Label>,
     preview: Option<(Label, ProjectivePoint)>,
+    pan_cursor: Option<Vec2>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -48,15 +49,7 @@ fn main() {
             enable_multipass_for_primary_context: false,
         })
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                draw_canvas,
-                application_chrome,
-                pan_and_zoom,
-                select_and_drag,
-            ),
-        )
+        .add_systems(Update, (draw_canvas, application_chrome, canvas_input))
         .run();
 }
 
@@ -68,27 +61,92 @@ fn setup(mut commands: Commands) {
 
 #[allow(
     clippy::needless_pass_by_value,
+    clippy::cast_possible_truncation,
     reason = "Bevy system resources are passed through ECS wrappers."
 )]
-fn pan_and_zoom(
+fn canvas_input(
     mut mouse_wheel: EventReader<MouseWheel>,
     mut mouse_motion: EventReader<MouseMotion>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    mut state: ResMut<GuiState>,
 ) {
     let Ok((mut transform, mut projection)) = camera.single_mut() else {
         return;
     };
-    if let Projection::Orthographic(orthographic) = projection.as_mut() {
-        for event in mouse_wheel.read() {
-            orthographic.scale = (orthographic.scale * (1.0 - event.y * 0.1)).clamp(0.1, 100.0);
+    let Projection::Orthographic(orthographic) = projection.as_mut() else {
+        return;
+    };
+    for event in mouse_wheel.read() {
+        orthographic.scale = (orthographic.scale * (1.0 - event.y * 0.1)).clamp(0.1, 100.0);
+    }
+    if mouse_buttons.pressed(MouseButton::Middle) {
+        for event in mouse_motion.read() {
+            transform.translation.x -= event.delta.x * orthographic.scale;
+            transform.translation.y += event.delta.y * orthographic.scale;
         }
-        if mouse_buttons.pressed(MouseButton::Middle) {
-            for event in mouse_motion.read() {
-                transform.translation.x -= event.delta.x * orthographic.scale;
-                transform.translation.y += event.delta.y * orthographic.scale;
-            }
+    }
+
+    let (Ok(window), Some(cursor)) = (
+        windows.single(),
+        windows.single().ok().and_then(Window::cursor_position),
+    ) else {
+        return;
+    };
+    let world = Vec2::new(
+        (cursor.x - window.width() / 2.0) * orthographic.scale + transform.translation.x,
+        (window.height() / 2.0 - cursor.y) * orthographic.scale + transform.translation.y,
+    );
+    if mouse_buttons.just_pressed(MouseButton::Left) {
+        state.selected = state
+            .project
+            .construction
+            .evaluate()
+            .ok()
+            .and_then(|snapshot| {
+                snapshot.iter().find_map(|(label, object)| match object {
+                    GeometricObject::Point(point) => match point.renderability() {
+                        geodesic_core::Renderability::Renderable(point)
+                            if Vec2::new(point.x as f32, point.y as f32).distance(world)
+                                <= 0.3 * orthographic.scale =>
+                        {
+                            Some(label.clone())
+                        }
+                        _ => None,
+                    },
+                    GeometricObject::Line(_) => None,
+                })
+            });
+        state.dragging = state.selected.clone();
+        state.pan_cursor = (state.dragging.is_none()).then_some(cursor);
+    }
+    if mouse_buttons.pressed(MouseButton::Left) {
+        if let Some(label) = &state.dragging {
+            state.preview = Some((
+                label.clone(),
+                ProjectivePoint::real_affine(f64::from(world.x), f64::from(world.y)),
+            ));
+        } else if let Some(previous) = state.pan_cursor {
+            let delta = cursor - previous;
+            transform.translation.x -= delta.x * orthographic.scale;
+            transform.translation.y += delta.y * orthographic.scale;
+            state.pan_cursor = Some(cursor);
         }
+    }
+    if mouse_buttons.just_released(MouseButton::Left) {
+        if let Some((label, point)) = state.preview.take() {
+            state.message = state
+                .project
+                .construction
+                .apply(GeoCommand::MovePoint { label, point })
+                .map_or_else(
+                    |error| format!("error: {error}"),
+                    |()| "moved selected point".to_owned(),
+                );
+        }
+        state.dragging = None;
+        state.pan_cursor = None;
     }
 }
 
@@ -255,6 +313,7 @@ fn clipped_line(
     clippy::cast_possible_truncation,
     reason = "Bevy systems use owned wrappers and the renderer uses f32 coordinates."
 )]
+#[allow(dead_code)]
 fn select_and_drag(
     windows: Query<&Window, With<PrimaryWindow>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
