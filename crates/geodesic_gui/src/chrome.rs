@@ -450,19 +450,24 @@ pub(crate) fn application_chrome(
                             close = true;
                         }
                         if ui.button(format!("Delete {label}")).clicked() {
-                            state.message = geodesic_io::apply_command(
-                                &mut state.project,
-                                geodesic_core::GeoCommand::Remove {
-                                    label: label.clone(),
-                                },
-                            )
-                            .map_or_else(
-                                |error| format!("error: {error}"),
-                                |()| format!("deleted {label} and dependents"),
-                            );
-                            if !state.message.starts_with("error:") {
-                                state.selected = None;
-                                state.sync_lisp_draft();
+                            if state.project_is_editable() {
+                                state.message = geodesic_io::apply_command(
+                                    &mut state.project,
+                                    geodesic_core::GeoCommand::Remove {
+                                        label: label.clone(),
+                                    },
+                                )
+                                .map_or_else(
+                                    |error| format!("error: {error}"),
+                                    |()| format!("deleted {label} and dependents"),
+                                );
+                                if !state.message.starts_with("error:") {
+                                    state.selected = None;
+                                    state.sync_lisp_draft();
+                                }
+                            } else {
+                                "resolve or discard the Lisp draft before deleting objects"
+                                    .clone_into(&mut state.message);
                             }
                             close = true;
                         }
