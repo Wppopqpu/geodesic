@@ -670,7 +670,12 @@ fn draw_axis_labels(
     let first_y = (bottom / label_step).ceil() * label_step;
     let axis_color = egui::Color32::from_rgb(85, 85, 95);
 
-    let x_axis_y = window.height() / 2.0 - transform.translation.y / orthographic.scale;
+    let x_axis_y = world_to_screen_y(
+        0.0,
+        transform.translation.y,
+        window.height(),
+        orthographic.scale,
+    );
     let y_axis_x = window.width() / 2.0 - transform.translation.x / orthographic.scale;
     let label_margin = 16.0;
     let x_label_y = if x_axis_y < canvas_rect.top() {
@@ -713,8 +718,12 @@ fn draw_axis_labels(
         if value.abs() < grid_step * 0.5 {
             continue;
         }
-        let screen_y =
-            window.height() / 2.0 - (value - transform.translation.y) / orthographic.scale;
+        let screen_y = world_to_screen_y(
+            value,
+            transform.translation.y,
+            window.height(),
+            orthographic.scale,
+        );
         if !(canvas_rect.top() + label_margin..=canvas_rect.bottom() - label_margin)
             .contains(&screen_y)
         {
@@ -729,6 +738,10 @@ fn draw_axis_labels(
             "y",
         );
     }
+}
+
+fn world_to_screen_y(world_y: f32, camera_y: f32, screen_height: f32, scale: f32) -> f32 {
+    screen_height / 2.0 - (world_y - camera_y) / scale
 }
 
 fn axis_label(
@@ -1178,5 +1191,10 @@ mod tests {
         assert_eq!(super::format_coordinate(1_000_000.0, 1.0), "1e6");
         assert_eq!(super::format_coordinate(2.5e7, 1.0), "2.5e7");
         assert_eq!(super::format_coordinate(0.00001, 0.00001), "1e-5");
+    }
+
+    #[test]
+    fn projects_horizontal_axis_using_camera_translation_direction() {
+        assert!((super::world_to_screen_y(0.0, 1.0, 100.0, 0.5) - 52.0).abs() < f32::EPSILON);
     }
 }
