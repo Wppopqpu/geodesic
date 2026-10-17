@@ -13,6 +13,7 @@ use geodesic_io::Project;
 const SIDE_PANEL_WIDTH: f32 = 220.0;
 const TOOLBAR_HEIGHT: f32 = 36.0;
 const COMMAND_BAR_HEIGHT: f32 = 44.0;
+const COMPLETION_ROW_HEIGHT: f32 = 24.0;
 const MAX_COMPLETIONS: usize = 8;
 
 #[derive(Resource, Default)]
@@ -549,19 +550,18 @@ fn application_chrome(
             ui.allocate_space(ui.available_size());
         });
     if state.command_bar_visible {
+        let candidates = command_completions(&state.project.construction, &state.command);
+        if state.completion_query != state.command {
+            let command = state.command.clone();
+            state.completion_query.clone_from(&command);
+            state.completion_index = 0;
+        }
+        if !candidates.is_empty() {
+            state.completion_index %= candidates.len();
+        }
         egui::TopBottomPanel::bottom("command_bar")
-            .exact_height(COMMAND_BAR_HEIGHT)
+            .exact_height(COMMAND_BAR_HEIGHT + COMPLETION_ROW_HEIGHT * candidates.len() as f32)
             .show(context, |ui| {
-                let candidates = command_completions(&state.project.construction, &state.command);
-                if state.completion_query != state.command {
-                    let command = state.command.clone();
-                    state.completion_query.clone_from(&command);
-                    state.completion_index = 0;
-                }
-                if !candidates.is_empty() {
-                    state.completion_index %= candidates.len();
-                }
-
                 ui.horizontal(|ui| {
                     ui.label(":");
                     ui.vertical(|ui| {
