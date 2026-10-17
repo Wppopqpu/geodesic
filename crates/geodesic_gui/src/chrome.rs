@@ -197,31 +197,38 @@ pub(crate) fn application_chrome(
         .show(&mut viewport_ui, |ui| {
             state.algebra_width = ui.max_rect().width();
             ui.heading("Algebra");
-            match state.project.construction.evaluate() {
-                Ok(snapshot) => {
-                    for (label, object) in snapshot.iter() {
-                        ui.label(format!("{label}: {object:?}"));
-                        let hint = match object {
-                            geodesic_core::GeometricObject::Point(point) => {
-                                renderability_hint(point.renderability())
+            ui.separator();
+            let content_height = ui.available_height();
+            egui::ScrollArea::vertical()
+                .id_salt("algebra_scroll")
+                .auto_shrink([false, false])
+                .hscroll(false)
+                .max_height(content_height)
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| match state.project.construction.evaluate() {
+                    Ok(snapshot) => {
+                        for (label, object) in snapshot.iter() {
+                            ui.label(format!("{label}: {object:?}"));
+                            let hint = match object {
+                                geodesic_core::GeometricObject::Point(point) => {
+                                    renderability_hint(point.renderability())
+                                }
+                                geodesic_core::GeometricObject::Line(line) => {
+                                    renderability_hint(line.renderability())
+                                }
+                                geodesic_core::GeometricObject::Segment(_)
+                                | geodesic_core::GeometricObject::Ray(_)
+                                | geodesic_core::GeometricObject::Vector(_) => None,
+                            };
+                            if let Some(hint) = hint {
+                                ui.small(hint);
                             }
-                            geodesic_core::GeometricObject::Line(line) => {
-                                renderability_hint(line.renderability())
-                            }
-                            geodesic_core::GeometricObject::Segment(_)
-                            | geodesic_core::GeometricObject::Ray(_)
-                            | geodesic_core::GeometricObject::Vector(_) => None,
-                        };
-                        if let Some(hint) = hint {
-                            ui.small(hint);
                         }
                     }
-                }
-                Err(error) => {
-                    ui.colored_label(egui::Color32::RED, error.to_string());
-                }
-            }
-            ui.allocate_space(ui.available_size());
+                    Err(error) => {
+                        ui.colored_label(egui::Color32::RED, error.to_string());
+                    }
+                });
         });
     egui::Panel::right("style_editor")
         .default_size(state.style_width)
@@ -230,89 +237,98 @@ pub(crate) fn application_chrome(
         .show(&mut viewport_ui, |ui| {
             state.style_width = ui.max_rect().width();
             ui.heading("Style");
-            if let Some(label) = state.selected.clone() {
-                ui.label(label.to_string());
-                let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
-                if ui.button("Create emphasis preset").clicked()
-                    && let Ok(preset) = Label::parse("emphasis")
-                {
-                    state
-                        .project
-                        .style_presets
-                        .entry(preset)
-                        .or_insert(geodesic_io::ObjectStyle {
-                            color: "#d32f2f".to_owned(),
-                            size: 0.25,
-                            opacity: 1.0,
-                        });
-                }
-                for preset in presets {
-                    if ui.button(format!("Use preset {preset}")).clicked() {
-                        state.project.object_presets.insert(label.clone(), preset);
-                        state.project.object_styles.remove(&label);
-                    }
-                }
-                if state.project.object_presets.contains_key(&label) {
-                    let preset = &state.project.object_presets[&label];
-                    ui.label(format!("Using preset {preset}"));
-                    if ui.button("Use direct override").clicked() {
-                        let style = geodesic_io::effective_style(&state.project, &label);
-                        state.project.object_presets.remove(&label);
-                        state.project.object_styles.insert(label.clone(), style);
-                    }
-                } else {
-                    let is_point =
-                        state
-                            .project
-                            .construction
-                            .definitions()
-                            .any(|(candidate, definition)| {
-                                candidate == &label
-                                    && matches!(
+            ui.separator();
+            let content_height = ui.available_height();
+            egui::ScrollArea::vertical()
+                .id_salt("style_scroll")
+                .auto_shrink([false, false])
+                .hscroll(false)
+                .max_height(content_height)
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| {
+                    if let Some(label) = state.selected.clone() {
+                        ui.label(label.to_string());
+                        let presets: Vec<_> = state.project.style_presets.keys().cloned().collect();
+                        if ui.button("Create emphasis preset").clicked()
+                            && let Ok(preset) = Label::parse("emphasis")
+                        {
+                            state.project.style_presets.entry(preset).or_insert(
+                                geodesic_io::ObjectStyle {
+                                    color: "#d32f2f".to_owned(),
+                                    size: 0.25,
+                                    opacity: 1.0,
+                                },
+                            );
+                        }
+                        for preset in presets {
+                            if ui.button(format!("Use preset {preset}")).clicked() {
+                                state.project.object_presets.insert(label.clone(), preset);
+                                state.project.object_styles.remove(&label);
+                            }
+                        }
+                        if state.project.object_presets.contains_key(&label) {
+                            let preset = &state.project.object_presets[&label];
+                            ui.label(format!("Using preset {preset}"));
+                            if ui.button("Use direct override").clicked() {
+                                let style = geodesic_io::effective_style(&state.project, &label);
+                                state.project.object_presets.remove(&label);
+                                state.project.object_styles.insert(label.clone(), style);
+                            }
+                        } else {
+                            let is_point =
+                                state.project.construction.definitions().any(
+                                    |(candidate, definition)| {
+                                        candidate == &label
+                                            && matches!(
                                         definition,
                                         geodesic_core::ObjectDefinition::FreePoint(_)
                                             | geodesic_core::ObjectDefinition::Intersection { .. }
                                     )
-                            });
-                    let mut style = geodesic_io::effective_style(&state.project, &label);
-                    if is_point && !state.project.object_styles.contains_key(&label) {
-                        style.size =
-                            f64::from(crate::canvas::point_radius_pixels(&state.project, &label))
-                                * 0.03;
-                    }
-                    let mut color = egui_color(&style.color);
-                    let mut changed = ui.color_edit_button_srgba(&mut color).changed();
-                    if changed {
-                        style.color = hex_color(color);
-                    }
-                    let mut size = style.size / 0.03;
-                    let (maximum, caption) = if is_point {
-                        (9.0, "Radius (px)")
+                                    },
+                                );
+                            let mut style = geodesic_io::effective_style(&state.project, &label);
+                            if is_point && !state.project.object_styles.contains_key(&label) {
+                                style.size = f64::from(crate::canvas::point_radius_pixels(
+                                    &state.project,
+                                    &label,
+                                )) * 0.03;
+                            }
+                            let mut color = egui_color(&style.color);
+                            let mut changed = ui.color_edit_button_srgba(&mut color).changed();
+                            if changed {
+                                style.color = hex_color(color);
+                            }
+                            let mut size = style.size / 0.03;
+                            let (maximum, caption) = if is_point {
+                                (9.0, "Radius (px)")
+                            } else {
+                                (13.0, "Thickness (½ px)")
+                            };
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut size, 1.0..=maximum)
+                                        .step_by(1.0)
+                                        .text(caption),
+                                )
+                                .changed()
+                            {
+                                style.size = size * 0.03;
+                                changed = true;
+                            }
+                            changed |= ui
+                                .add(
+                                    egui::Slider::new(&mut style.opacity, 0.0..=1.0)
+                                        .text("Opacity"),
+                                )
+                                .changed();
+                            if changed {
+                                state.project.object_styles.insert(label, style);
+                            }
+                        }
                     } else {
-                        (13.0, "Thickness (½ px)")
-                    };
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut size, 1.0..=maximum)
-                                .step_by(1.0)
-                                .text(caption),
-                        )
-                        .changed()
-                    {
-                        style.size = size * 0.03;
-                        changed = true;
+                        ui.label("Select a point or line to edit its style.");
                     }
-                    changed |= ui
-                        .add(egui::Slider::new(&mut style.opacity, 0.0..=1.0).text("Opacity"))
-                        .changed();
-                    if changed {
-                        state.project.object_styles.insert(label, style);
-                    }
-                }
-            } else {
-                ui.label("Select a point or line to edit its style.");
-            }
-            ui.allocate_space(ui.available_size());
+                });
         });
     if state.command_bar_visible {
         let candidates = command_completions(&state.project.construction, &state.command);
