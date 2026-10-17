@@ -32,9 +32,15 @@ pub(crate) struct GuiState {
     pub(crate) toolbar_scroll_offset: f32,
     /// Whether the toolbar's content exceeded its viewport in the previous frame.
     pub(crate) toolbar_overflows: bool,
+    /// The currently open product attribution dialog, if any.
+    pub(crate) about_dialog: Option<AboutDialog>,
     pub(crate) active_tool: ActiveTool,
     pub(crate) tool_inputs: Vec<Label>,
 }
+
+/// A visible product-attribution surface.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AboutDialog;
 
 /// Loaded toolbar icons with their provenance recorded in `assets/ASSET_MANIFEST.md`.
 #[derive(Resource)]

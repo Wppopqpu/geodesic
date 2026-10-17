@@ -10,7 +10,8 @@ are used only by Geodesic's non-commercial desktop toolbar.
 - **License:** CC BY-NC-SA 4.0 or later; see <https://www.geogebra.org/license>
 - **Copyright notice:** © International GeoGebra Institute
 - **Required product attribution:** `Made with GeoGebra®`, a GeoGebra website
-  link, copyright notice, and license notice appear in the application toolbar.
+  link, copyright notice, and license notice appear in Geodesic's accessible
+  **About Geodesic** dialog.
 - **No endorsement:** these assets do not imply GeoGebra endorsement of Geodesic.
 
 | Geodesic file | Source file | SHA-256 | Purpose |

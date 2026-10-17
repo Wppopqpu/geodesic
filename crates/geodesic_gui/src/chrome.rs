@@ -14,7 +14,7 @@ use crate::{
         apply_theme, draw_axis_labels, egui_color, hex_color, submit_command, wrapped_text_height,
     },
     state::{
-        ActiveTool, COMMAND_BAR_HEIGHT, COMPLETION_ROW_HEIGHT, GuiState,
+        AboutDialog, ActiveTool, COMMAND_BAR_HEIGHT, COMPLETION_ROW_HEIGHT, GuiState,
         MESSAGE_BAR_VERTICAL_PADDING, TOOLBAR_HEIGHT, ToolbarIcons, UiTheme,
     },
 };
@@ -147,8 +147,39 @@ fn toolbar_contents(
         }
     }
     ui.separator();
-    ui.small("© International GeoGebra Institute · CC BY-NC-SA 4.0");
-    ui.hyperlink_to("Made with GeoGebra®", "https://www.geogebra.org/");
+    if ui
+        .button("ⓘ")
+        .on_hover_text("About and asset attribution")
+        .clicked()
+    {
+        state.about_dialog = Some(AboutDialog);
+    }
+}
+
+fn show_attribution_window(context: &egui::Context, about_dialog: &mut Option<AboutDialog>) {
+    if about_dialog.is_none() {
+        return;
+    }
+    let mut open = true;
+    egui::Window::new("About Geodesic")
+        .open(&mut open)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.heading("Geodesic");
+            ui.label("Real affine canvas · complex projective kernel");
+            ui.separator();
+            ui.strong("Made with GeoGebra®");
+            ui.label("This non-commercial application incorporates GeoGebra toolbar icons.");
+            ui.label("© International GeoGebra Institute · CC BY-NC-SA 4.0 or later.");
+            ui.hyperlink_to("GeoGebra website", "https://www.geogebra.org/");
+            ui.hyperlink_to("GeoGebra license", "https://www.geogebra.org/license");
+            ui.small("GeoGebra does not endorse Geodesic.");
+            ui.separator();
+            ui.small("Full asset provenance and checksums: assets/ASSET_MANIFEST.md");
+        });
+    if !open {
+        *about_dialog = None;
+    }
 }
 
 fn renderability_hint<T: Copy>(
@@ -277,6 +308,7 @@ pub(crate) fn application_chrome(
                 }
             });
         });
+    show_attribution_window(context, &mut state.about_dialog);
     egui::Panel::left("algebra")
         .default_size(state.algebra_width)
         .min_size(160.0)
