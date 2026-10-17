@@ -51,7 +51,10 @@ fn main() {
             enable_multipass_for_primary_context: false,
         })
         .add_systems(Startup, setup)
-        .add_systems(Update, (draw_canvas, application_chrome, canvas_input))
+        .add_systems(
+            Update,
+            (draw_canvas, application_chrome, canvas_input).chain(),
+        )
         .run();
 }
 
@@ -69,6 +72,7 @@ fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
     reason = "Bevy system resources are passed through ECS wrappers."
 )]
 fn canvas_input(
+    mut contexts: EguiContexts,
     mut mouse_wheel: EventReader<MouseWheel>,
     mut mouse_motion: EventReader<MouseMotion>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -76,6 +80,13 @@ fn canvas_input(
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     mut state: ResMut<GuiState>,
 ) {
+    let egui_context = contexts.ctx_mut();
+    if egui_context.is_pointer_over_area() {
+        state.dragging = None;
+        state.preview = None;
+        state.pan_cursor = None;
+        return;
+    }
     let Ok((mut transform, mut projection)) = camera.single_mut() else {
         return;
     };
@@ -456,7 +467,7 @@ fn application_chrome(
         .min_width(160.0)
         .resizable(true)
         .show(context, |ui| {
-            state.algebra_width = ui.available_width();
+            state.algebra_width = ui.max_rect().width();
             ui.heading("Algebra");
             match state.project.construction.evaluate() {
                 Ok(snapshot) => {
@@ -468,13 +479,14 @@ fn application_chrome(
                     ui.colored_label(egui::Color32::RED, error.to_string());
                 }
             }
+            ui.allocate_space(ui.available_size());
         });
     egui::SidePanel::right("style_editor")
         .default_width(state.style_width)
         .min_width(160.0)
         .resizable(true)
         .show(context, |ui| {
-            state.style_width = ui.available_width();
+            state.style_width = ui.max_rect().width();
             ui.heading("Style");
             if let Some(label) = state.selected.clone() {
                 ui.label(label.to_string());
@@ -521,6 +533,7 @@ fn application_chrome(
             } else {
                 ui.label("Select a real affine point to edit its direct style.");
             }
+            ui.allocate_space(ui.available_size());
         });
     if !state.command_bar_visible {
         return;
