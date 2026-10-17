@@ -14,6 +14,7 @@ const SIDE_PANEL_WIDTH: f32 = 220.0;
 const TOOLBAR_HEIGHT: f32 = 36.0;
 const COMMAND_BAR_HEIGHT: f32 = 44.0;
 const COMPLETION_ROW_HEIGHT: f32 = 24.0;
+const MESSAGE_BAR_VERTICAL_PADDING: f32 = 8.0;
 const MAX_COMPLETIONS: usize = 8;
 
 #[derive(Resource, Default)]
@@ -34,6 +35,7 @@ struct GuiState {
     dragging: Option<Label>,
     preview: Option<(Label, ProjectivePoint)>,
     pan_cursor: Option<Vec2>,
+    bottom_ui_height: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -171,12 +173,7 @@ fn canvas_input(
 }
 
 fn canvas_contains(cursor: Vec2, window: &Window, state: &GuiState) -> bool {
-    let bottom = window.height()
-        - if state.command_bar_visible {
-            COMMAND_BAR_HEIGHT
-        } else {
-            0.0
-        };
+    let bottom = window.height() - state.bottom_ui_height;
     cursor.x >= state.algebra_width
         && cursor.x <= window.width() - state.style_width
         && cursor.y >= TOOLBAR_HEIGHT
@@ -559,8 +556,18 @@ fn application_chrome(
         if !candidates.is_empty() {
             state.completion_index %= candidates.len();
         }
+        let hint = command_hint(&state.command);
+        let hint_height = wrapped_text_height(
+            context,
+            hint,
+            context.available_rect().width(),
+            &egui::TextStyle::Small,
+        );
+        let command_height =
+            COMMAND_BAR_HEIGHT + COMPLETION_ROW_HEIGHT * candidates.len() as f32 + hint_height;
+        state.bottom_ui_height = command_height;
         egui::TopBottomPanel::bottom("command_bar")
-            .exact_height(COMMAND_BAR_HEIGHT + COMPLETION_ROW_HEIGHT * candidates.len() as f32)
+            .exact_height(command_height)
             .show(context, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(":");
@@ -639,9 +646,6 @@ fn application_chrome(
                                 }
                             });
                         }
-                        if !state.message.is_empty() {
-                            ui.label(&state.message);
-                        }
                         if command_bar_tab_pressed {
                             response.request_focus();
                         }
@@ -653,7 +657,28 @@ fn application_chrome(
                         }
                     });
                 });
-                ui.small(command_hint(&state.command));
+                ui.small(hint);
+            });
+    } else {
+        state.bottom_ui_height = 0.0;
+    }
+    if !state.message.is_empty() {
+        let message_height = wrapped_text_height(
+            context,
+            &state.message,
+            context.available_rect().width(),
+            &egui::TextStyle::Body,
+        ) + MESSAGE_BAR_VERTICAL_PADDING;
+        state.bottom_ui_height += message_height;
+        egui::TopBottomPanel::bottom("message_bar")
+            .exact_height(message_height)
+            .show(context, |ui| {
+                let text = if state.message.starts_with("error:") {
+                    egui::RichText::new(&state.message).color(egui::Color32::from_rgb(190, 55, 55))
+                } else {
+                    egui::RichText::new(&state.message)
+                };
+                ui.label(text);
             });
     }
     egui::CentralPanel::default()
@@ -661,6 +686,24 @@ fn application_chrome(
         .show(context, |ui| {
             draw_axis_labels(ui.painter(), ui.max_rect(), &windows, &camera);
         });
+}
+
+fn wrapped_text_height(
+    context: &egui::Context,
+    text: &str,
+    available_width: f32,
+    style: &egui::TextStyle,
+) -> f32 {
+    let font = style.resolve(context.style().as_ref());
+    let galley = context.fonts(|fonts| {
+        fonts.layout(
+            text.to_owned(),
+            font,
+            egui::Color32::PLACEHOLDER,
+            available_width.max(1.0),
+        )
+    });
+    galley.size().y
 }
 
 fn submit_command(state: &mut GuiState) {
@@ -1280,6 +1323,7 @@ mod tests {
             algebra_width: 220.0,
             style_width: 220.0,
             command_bar_visible: true,
+            bottom_ui_height: 100.0,
             ..GuiState::default()
         };
         let window = bevy::window::Window::default();
@@ -1290,6 +1334,11 @@ mod tests {
         ));
         assert!(!super::canvas_contains(
             bevy::prelude::Vec2::new(500.0, 20.0),
+            &window,
+            &state
+        ));
+        assert!(!super::canvas_contains(
+            bevy::prelude::Vec2::new(500.0, window.height() - 20.0),
             &window,
             &state
         ));
