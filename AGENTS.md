@@ -18,6 +18,10 @@ Do not treat this as a line-by-line Java port. Preserve user-observable
 geometric semantics where they are explicitly in scope, but design idiomatic
 Rust boundaries and types.
 
+The `geogebra-src/` directory contains the GeoGebra source code. Consult it as
+an implementation reference when developing corresponding behavior, while
+respecting the licensing constraints below.
+
 ## Product and License Constraints
 
 - This project is distributed only for non-commercial use while it reuses
