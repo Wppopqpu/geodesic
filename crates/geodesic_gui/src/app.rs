@@ -3,7 +3,7 @@ use bevy_egui::EguiPlugin;
 
 use crate::canvas::{canvas_input, draw_canvas};
 use crate::chrome::application_chrome;
-use crate::state::{GuiState, SIDE_PANEL_WIDTH};
+use crate::state::{GuiState, SIDE_PANEL_WIDTH, ToolbarIcons};
 
 pub(crate) fn run() {
     App::new()
@@ -19,7 +19,11 @@ pub(crate) fn run() {
         .run();
 }
 
-fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Bevy systems receive resource wrappers by value."
+)]
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut state: ResMut<GuiState>) {
     state.algebra_width = SIDE_PANEL_WIDTH;
     state.style_width = SIDE_PANEL_WIDTH;
     let mut projection = OrthographicProjection::default_2d();
@@ -29,4 +33,15 @@ fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
         Msaa::Sample4,
         Projection::Orthographic(projection),
     ));
+    commands.insert_resource(ToolbarIcons {
+        move_tool: asset_server.load("geogebra-toolbar/mode_move.png"),
+        point: asset_server.load("geogebra-toolbar/mode_point.png"),
+        segment: asset_server.load("geogebra-toolbar/mode_segment.png"),
+        ray: asset_server.load("geogebra-toolbar/mode_ray.png"),
+        vector: asset_server.load("geogebra-toolbar/mode_vector.png"),
+        midpoint: asset_server.load("geogebra-toolbar/mode_midpoint.png"),
+        perpendicular_bisector: asset_server
+            .load("geogebra-toolbar/mode_perpendicularbisector.png"),
+        angle_bisector: asset_server.load("geogebra-toolbar/mode_anglebisector.png"),
+    });
 }

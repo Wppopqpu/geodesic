@@ -1,4 +1,4 @@
-use bevy::prelude::{Resource, Vec2};
+use bevy::prelude::{Handle, Image, Resource, Vec2};
 use geodesic_core::{Label, ProjectiveLine, ProjectivePoint};
 use geodesic_io::Project;
 
@@ -30,6 +30,19 @@ pub(crate) struct GuiState {
     pub(crate) bottom_ui_height: f32,
     pub(crate) active_tool: ActiveTool,
     pub(crate) tool_inputs: Vec<Label>,
+}
+
+/// Loaded toolbar icons with their provenance recorded in `assets/ASSET_MANIFEST.md`.
+#[derive(Resource)]
+pub(crate) struct ToolbarIcons {
+    pub(crate) move_tool: Handle<Image>,
+    pub(crate) point: Handle<Image>,
+    pub(crate) segment: Handle<Image>,
+    pub(crate) ray: Handle<Image>,
+    pub(crate) vector: Handle<Image>,
+    pub(crate) midpoint: Handle<Image>,
+    pub(crate) perpendicular_bisector: Handle<Image>,
+    pub(crate) angle_bisector: Handle<Image>,
 }
 
 #[derive(Clone)]
@@ -73,6 +86,7 @@ pub(crate) enum ActiveTool {
 }
 
 impl ActiveTool {
+    #[cfg(test)]
     pub(crate) const ALL: [Self; 8] = [
         Self::Move,
         Self::Point,

@@ -1,9 +1,9 @@
 use bevy::window::PrimaryWindow;
 use bevy::{
     ecs::error::Result,
-    prelude::{Camera2d, Projection, Query, ResMut, Transform, Window, With},
+    prelude::{Camera2d, Handle, Image, Projection, Query, Res, ResMut, Transform, Window, With},
 };
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::{EguiContexts, EguiTextureHandle, egui};
 use geodesic_core::Label;
 
 use crate::{
@@ -15,9 +15,105 @@ use crate::{
     },
     state::{
         ActiveTool, COMMAND_BAR_HEIGHT, COMPLETION_ROW_HEIGHT, GuiState,
-        MESSAGE_BAR_VERTICAL_PADDING, TOOLBAR_HEIGHT, UiTheme,
+        MESSAGE_BAR_VERTICAL_PADDING, TOOLBAR_HEIGHT, ToolbarIcons, UiTheme,
     },
 };
+
+const TOOL_STACKS: [&[ActiveTool]; 4] = [
+    &[ActiveTool::Move],
+    &[ActiveTool::Point, ActiveTool::Midpoint],
+    &[ActiveTool::Segment, ActiveTool::Ray, ActiveTool::Vector],
+    &[ActiveTool::PerpendicularBisector, ActiveTool::AngleBisector],
+];
+
+struct ToolbarIconIds {
+    move_tool: egui::TextureId,
+    point: egui::TextureId,
+    segment: egui::TextureId,
+    ray: egui::TextureId,
+    vector: egui::TextureId,
+    midpoint: egui::TextureId,
+    perpendicular_bisector: egui::TextureId,
+    angle_bisector: egui::TextureId,
+}
+
+impl ToolbarIconIds {
+    fn from_assets(contexts: &mut EguiContexts, icons: &ToolbarIcons) -> Self {
+        Self {
+            move_tool: add_toolbar_image(contexts, &icons.move_tool),
+            point: add_toolbar_image(contexts, &icons.point),
+            segment: add_toolbar_image(contexts, &icons.segment),
+            ray: add_toolbar_image(contexts, &icons.ray),
+            vector: add_toolbar_image(contexts, &icons.vector),
+            midpoint: add_toolbar_image(contexts, &icons.midpoint),
+            perpendicular_bisector: add_toolbar_image(contexts, &icons.perpendicular_bisector),
+            angle_bisector: add_toolbar_image(contexts, &icons.angle_bisector),
+        }
+    }
+
+    const fn for_tool(&self, tool: ActiveTool) -> egui::TextureId {
+        match tool {
+            ActiveTool::Move => self.move_tool,
+            ActiveTool::Point => self.point,
+            ActiveTool::Segment => self.segment,
+            ActiveTool::Ray => self.ray,
+            ActiveTool::Vector => self.vector,
+            ActiveTool::Midpoint => self.midpoint,
+            ActiveTool::PerpendicularBisector => self.perpendicular_bisector,
+            ActiveTool::AngleBisector => self.angle_bisector,
+        }
+    }
+}
+
+fn add_toolbar_image(contexts: &mut EguiContexts, image: &Handle<Image>) -> egui::TextureId {
+    contexts.add_image(EguiTextureHandle::Weak(image.id()))
+}
+
+fn toolbar_icon(texture_id: egui::TextureId) -> egui::Image<'static> {
+    egui::Image::new(egui::load::SizedTexture::new(texture_id, [32.0, 32.0]))
+        .fit_to_exact_size(egui::Vec2::splat(22.0))
+}
+
+fn select_tool(state: &mut GuiState, tool: ActiveTool) {
+    state.active_tool = tool;
+    state.tool_inputs.clear();
+    state.message = match tool.input_count() {
+        0 if tool == ActiveTool::Point => "click the canvas to create a point".to_owned(),
+        0 => "select and drag free objects".to_owned(),
+        count => format!("select {count} points for {}", tool.name().to_lowercase()),
+    };
+}
+
+fn tool_stack(
+    ui: &mut egui::Ui,
+    state: &mut GuiState,
+    icons: &ToolbarIconIds,
+    tools: &[ActiveTool],
+) {
+    let active = tools
+        .iter()
+        .copied()
+        .find(|tool| *tool == state.active_tool)
+        .unwrap_or(tools[0]);
+    let button = egui::Button::image(toolbar_icon(icons.for_tool(active)))
+        .selected(state.active_tool == active);
+    if ui.add(button).on_hover_text(active.name()).clicked() {
+        select_tool(state, active);
+    }
+    if tools.len() > 1 {
+        ui.menu_button("▾", |ui| {
+            for &tool in tools {
+                let button =
+                    egui::Button::image_and_text(toolbar_icon(icons.for_tool(tool)), tool.name())
+                        .selected(state.active_tool == tool);
+                if ui.add(button).on_hover_text(tool.name()).clicked() {
+                    select_tool(state, tool);
+                    ui.close();
+                }
+            }
+        });
+    }
+}
 
 fn renderability_hint<T: Copy>(
     classification: geodesic_core::Renderability<T>,
@@ -36,14 +132,17 @@ fn renderability_hint<T: Copy>(
 #[allow(
     clippy::too_many_lines,
     clippy::cast_precision_loss,
+    clippy::needless_pass_by_value,
     reason = "The application chrome keeps related egui panels in one system."
 )]
 pub(crate) fn application_chrome(
     mut contexts: EguiContexts,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Transform, &Projection), With<Camera2d>>,
+    toolbar_icons: Res<ToolbarIcons>,
     mut state: ResMut<GuiState>,
 ) -> Result {
+    let toolbar_icon_ids = ToolbarIconIds::from_assets(&mut contexts, toolbar_icons.as_ref());
     let context = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
         context.clone(),
@@ -71,28 +170,10 @@ pub(crate) fn application_chrome(
         .exact_size(TOOLBAR_HEIGHT)
         .show(&mut viewport_ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("Geodesic");
-                ui.label("Real affine canvas · complex projective kernel");
-                ui.separator();
-                for tool in ActiveTool::ALL {
-                    if ui
-                        .selectable_label(state.active_tool == tool, tool.name())
-                        .clicked()
-                    {
-                        state.active_tool = tool;
-                        state.tool_inputs.clear();
-                        state.message = match tool.input_count() {
-                            0 if tool == ActiveTool::Point => {
-                                "click the canvas to create a point".to_owned()
-                            }
-                            0 => "select and drag free objects".to_owned(),
-                            count => {
-                                format!("select {count} points for {}", tool.name().to_lowercase())
-                            }
-                        };
-                    }
+                for tools in TOOL_STACKS {
+                    tool_stack(ui, state.as_mut(), &toolbar_icon_ids, tools);
+                    ui.separator();
                 }
-                ui.separator();
                 ui.label("Theme:");
                 for (theme, name) in [
                     (UiTheme::System, "System"),
@@ -104,6 +185,9 @@ pub(crate) fn application_chrome(
                         apply_theme(context, theme);
                     }
                 }
+                ui.separator();
+                ui.small("© International GeoGebra Institute · CC BY-NC-SA 4.0");
+                ui.hyperlink_to("Made with GeoGebra®", "https://www.geogebra.org/");
             });
         });
     egui::Panel::left("algebra")
@@ -310,7 +394,7 @@ pub(crate) fn application_chrome(
                             );
                             completion_cursor = Some(state.command.chars().count());
                         } else if input.2 {
-                            submit_command(&mut state);
+                            submit_command(state.as_mut());
                         } else if input.3 {
                             state.command_bar_visible = false;
                         }
@@ -371,4 +455,17 @@ pub(crate) fn application_chrome(
             draw_axis_labels(ui.painter(), ui.max_rect(), &windows, &camera);
         });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TOOL_STACKS;
+    use crate::state::ActiveTool;
+
+    #[test]
+    fn tool_stacks_cover_each_available_tool_once() {
+        let mut tools: Vec<_> = TOOL_STACKS.into_iter().flatten().copied().collect();
+        tools.sort_by_key(|tool| *tool as u8);
+        assert_eq!(tools, ActiveTool::ALL);
+    }
 }
