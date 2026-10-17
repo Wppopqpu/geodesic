@@ -26,6 +26,8 @@ struct GuiState {
     completion_index: usize,
     message: String,
     theme: UiTheme,
+    algebra_width: f32,
+    style_width: f32,
     selected: Option<Label>,
     dragging: Option<Label>,
     preview: Option<(Label, ProjectivePoint)>,
@@ -53,7 +55,9 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, mut state: ResMut<GuiState>) {
+    state.algebra_width = SIDE_PANEL_WIDTH;
+    state.style_width = SIDE_PANEL_WIDTH;
     let mut projection = OrthographicProjection::default_2d();
     projection.scale = 0.02;
     commands.spawn((Camera2d, Projection::Orthographic(projection)));
@@ -419,7 +423,14 @@ fn application_chrome(
         state.command_bar_visible = true;
         state.command_bar_focus_requested = true;
     }
-    draw_axis_labels(context, &windows, &camera, state.command_bar_visible);
+    draw_axis_labels(
+        context,
+        &windows,
+        &camera,
+        state.command_bar_visible,
+        state.algebra_width,
+        state.style_width,
+    );
     egui::TopBottomPanel::top("toolbar")
         .exact_height(TOOLBAR_HEIGHT)
         .show(context, |ui| {
@@ -441,8 +452,11 @@ fn application_chrome(
             });
         });
     egui::SidePanel::left("algebra")
-        .exact_width(SIDE_PANEL_WIDTH)
+        .default_width(state.algebra_width)
+        .min_width(160.0)
+        .resizable(true)
         .show(context, |ui| {
+            state.algebra_width = ui.available_width();
             ui.heading("Algebra");
             match state.project.construction.evaluate() {
                 Ok(snapshot) => {
@@ -456,8 +470,11 @@ fn application_chrome(
             }
         });
     egui::SidePanel::right("style_editor")
-        .exact_width(SIDE_PANEL_WIDTH)
+        .default_width(state.style_width)
+        .min_width(160.0)
+        .resizable(true)
         .show(context, |ui| {
+            state.style_width = ui.available_width();
             ui.heading("Style");
             if let Some(label) = state.selected.clone() {
                 ui.label(label.to_string());
@@ -619,6 +636,8 @@ fn draw_axis_labels(
     windows: &Query<&Window, With<PrimaryWindow>>,
     camera: &Query<(&Transform, &Projection), With<Camera2d>>,
     command_bar_visible: bool,
+    algebra_width: f32,
+    style_width: f32,
 ) {
     let Some((left, right, bottom, top, scale)) = visible_world_bounds(windows, camera) else {
         return;
@@ -627,9 +646,9 @@ fn draw_axis_labels(
         return;
     };
     let canvas_rect = egui::Rect::from_min_max(
-        egui::pos2(SIDE_PANEL_WIDTH, TOOLBAR_HEIGHT),
+        egui::pos2(algebra_width, TOOLBAR_HEIGHT),
         egui::pos2(
-            window.width() - SIDE_PANEL_WIDTH,
+            window.width() - style_width,
             window.height()
                 - if command_bar_visible {
                     COMMAND_BAR_HEIGHT
