@@ -12,7 +12,9 @@ use geodesic_io::{LinePattern, PointShape};
 
 use crate::path_renderer::{CanvasBatch, CanvasMesh, PathPainter};
 use crate::presentation::bevy_color;
-use crate::state::{ActiveTool, DragPreview, DragTarget, GuiState, TOOLBAR_HEIGHT};
+use crate::state::{
+    ActiveTool, CanvasContextMenu, DragPreview, DragTarget, GuiState, TOOLBAR_HEIGHT,
+};
 
 /// The initial camera scale maps 0.15 persisted style units to five pixels.
 ///
@@ -32,6 +34,7 @@ const CANVAS_CHROME_GUTTER: f32 = 4.0;
 #[allow(
     clippy::needless_pass_by_value,
     clippy::cast_possible_truncation,
+    clippy::too_many_lines,
     reason = "Bevy system resources are passed through ECS wrappers."
 )]
 pub(crate) fn canvas_input(
@@ -95,6 +98,14 @@ pub(crate) fn canvas_input(
     }
 
     let world = screen_to_world(cursor, window, transform.translation, orthographic.scale);
+    if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Right) {
+        let candidates = canvas_candidates(&state.project, world, orthographic.scale);
+        state.context_menu = (!candidates.is_empty()).then_some(CanvasContextMenu {
+            screen_position: cursor,
+            candidates,
+        });
+        return;
+    }
     if cursor_is_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
         if state.active_tool != ActiveTool::Move {
             if !state.project_is_editable() {
@@ -391,6 +402,47 @@ fn select_canvas_object(
                 | GeometricObject::Vector(_) => None,
             })
         })
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Canvas hit testing is performed in Bevy's f32 world coordinates."
+)]
+fn canvas_candidates(
+    project: &geodesic_io::Project,
+    world: Vec2,
+    camera_scale: f32,
+) -> Vec<geodesic_core::Label> {
+    let Ok(snapshot) = project.construction.evaluate() else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for (label, object) in snapshot.iter() {
+        let hit = match object {
+            GeometricObject::Point(point) => matches!(
+                point.renderability(),
+                geodesic_core::Renderability::Renderable(point)
+                    if point_is_hit_radius(
+                        Vec2::new(point.x as f32, point.y as f32),
+                        world,
+                        point_radius_pixels(project, label),
+                        camera_scale,
+                    )
+            ),
+            GeometricObject::Line(line) => line_is_hit(*line, world, camera_scale),
+            GeometricObject::Segment(segment) => {
+                bounded_is_hit(segment.start, segment.end, world, camera_scale)
+            }
+            GeometricObject::Ray(ray) => ray_is_hit(ray, world, camera_scale),
+            GeometricObject::Vector(vector) => {
+                bounded_is_hit(vector.start, vector.end, world, camera_scale)
+            }
+        };
+        if hit {
+            candidates.push(label.clone());
+        }
+    }
+    candidates
 }
 
 #[allow(

@@ -436,6 +436,43 @@ pub(crate) fn application_chrome(
             });
         });
     show_attribution_window(context, &mut state.about_dialog);
+    if let Some(menu) = state.context_menu.clone() {
+        let mut close = false;
+        egui::Area::new("canvas_context_menu".into())
+            .fixed_pos(egui::pos2(menu.screen_position.x, menu.screen_position.y))
+            .order(egui::Order::Foreground)
+            .show(context, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label("Nearby objects");
+                    for label in &menu.candidates {
+                        if ui.button(format!("Select {label}")).clicked() {
+                            state.selected = Some(label.clone());
+                            close = true;
+                        }
+                        if ui.button(format!("Delete {label}")).clicked() {
+                            state.message = geodesic_io::apply_command(
+                                &mut state.project,
+                                geodesic_core::GeoCommand::Remove {
+                                    label: label.clone(),
+                                },
+                            )
+                            .map_or_else(
+                                |error| format!("error: {error}"),
+                                |()| format!("deleted {label} and dependents"),
+                            );
+                            if !state.message.starts_with("error:") {
+                                state.selected = None;
+                                state.sync_lisp_draft();
+                            }
+                            close = true;
+                        }
+                    }
+                });
+            });
+        if close {
+            state.context_menu = None;
+        }
+    }
     egui::Panel::left("algebra")
         .default_size(state.algebra_width)
         .min_size(160.0)

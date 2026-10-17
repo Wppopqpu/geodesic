@@ -31,6 +31,7 @@ pub(crate) struct GuiState {
     pub(crate) algebra_width: f32,
     pub(crate) style_width: f32,
     pub(crate) selected: Option<Label>,
+    pub(crate) context_menu: Option<CanvasContextMenu>,
     pub(crate) dragging: Option<DragTarget>,
     pub(crate) preview: Option<DragPreview>,
     pub(crate) pan_cursor: Option<Vec2>,
@@ -45,6 +46,13 @@ pub(crate) struct GuiState {
     pub(crate) about_dialog: Option<AboutDialog>,
     pub(crate) active_tool: ActiveTool,
     pub(crate) tool_inputs: Vec<Label>,
+}
+
+/// Canvas-local nearby-object actions opened with the secondary mouse button.
+#[derive(Clone, Debug)]
+pub(crate) struct CanvasContextMenu {
+    pub(crate) screen_position: Vec2,
+    pub(crate) candidates: Vec<Label>,
 }
 
 /// A visible product-attribution surface.
